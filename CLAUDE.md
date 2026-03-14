@@ -16,11 +16,12 @@ Always use context7 for the most up to date docs on the chosen tech stack.
 ## Architecture
 - **Simulation Engine** (`src/lib/simulation-engine.ts`): Day-by-day loop orchestrating all agents. No timers — runs at LLM speed.
 - **Agents** (`src/lib/agents/`): Optimizer, Scheduler, Promoter (Sonnet 4.6), Manager (Haiku 4.5), Customer spawner
-- **Customer chat** (`/api/chat`): Manual customer interaction (separate from simulation)
+- **Curator Agent** (`/api/agents/curator`): Film curator — add/retire movies, getGenreDistribution, getMoviePerformance, trendAnalysis. Has its own frontend tab.
 - **SSE streaming** (`/api/simulation/stream`): Real-time events to dashboard
 - **Shared SQLite DB** is the source of truth for all agents
 - **Write queue** (`src/lib/write-queue.ts`): Async mutex prevents SQLITE_BUSY
-- **Frontend**: Chat tab (customer-facing) + Dashboard tab (simulation + analytics)
+- **Frontend**: Dashboard (simulation + analytics), Curator, Customers (bubble pool), Time tabs
+- **Customer Pool** (`/api/customers`): Lists customers who haven't booked yet. Polls every 3s. Bubble UI — hover for details. Customers disappear when they book.
 - DB connection: `src/lib/db.ts` — singleton `better-sqlite3` with WAL mode + foreign keys
 - See `ARCHITECTURE.md` for full diagrams and details
 
@@ -31,8 +32,11 @@ Migration scripts live in `migrations/` — run with `node scripts/run-migration
 
 **Important**: After cloning or resetting the DB, run migrations to ensure all tables exist:
 ```bash
+npm run migrate
+# Or individually:
 node scripts/run-migration.js 001_curator_movies
-node scripts/run-migration.js 002_bookings_promos_events
+node scripts/run-migration.js 002_bookings_promotions
+node scripts/run-migration.js 003_customers
 ```
 
 **movies** — 100 seeded movies
@@ -56,6 +60,10 @@ node scripts/run-migration.js 002_bookings_promos_events
 **simulation_events** — log of all agent actions during simulation
 - id, sim_time, event_type, agent, summary, data (JSON)
 
+**customers** — pool of potential customers (stub data, agent will manage later)
+- id, name, customer_type (buyer | persuadable), age, preferences, loyalty_tier, visit_frequency, budget_preference, preferred_showtime, interested_in_concessions, group_size_preference, notes
+- Excluded from pool when they have a booking (matched by customer_name)
+
 ## Simulation Model
 - Day-based: each day = complete cycle (strategic agents → 3 customer waves → end-of-day)
 - Customer waves: Morning (3 active + 1 passive), Afternoon (5+2), Evening (7+3)
@@ -65,16 +73,18 @@ node scripts/run-migration.js 002_bookings_promos_events
 
 ## Current State
 - Full multi-agent simulation system implemented
-- Chat works end-to-end with 9 tools
 - Dashboard has Simulation (live), Activity, Conversations, Analytics, Schedule, Alerts subtabs
 - SSE streaming from simulation engine to frontend
 - All agent types functional: Optimizer, Scheduler, Promoter, Manager, Active/Passive Customers
+- **Curator Agent**: Full implementation — addMovie, retireMovie, getGenreDistribution, getMoviePerformance, trendAnalysis. Curator tab with chat UI and Auto Rebalance.
+- **Customer Pool**: Bubble UI (3D-style circles, multi-directional drift). Polls every 3s. New customers pop in; customers who book disappear. Add via `node scripts/add-customer.js`.
 
 ## Conventions
 - .env is gitignored but committed as .env (hackathon context)
 - Schema files: `*_schema.sql` at project root
-- Migrations: `migrations/*.sql`, run via `node scripts/run-migration.js <name>`
-- Seed scripts: Python at project root
+- Migrations: `migrations/*.sql`, run via `npm run migrate` or `node scripts/run-migration.js <name>`
+- Seed scripts: Python at project root; `npm run seed:customers` for customer pool
+- Add single customer: `node scripts/add-customer.js` (edit script to change name/details)
 - Agent files: `src/lib/agents/*.ts`
 - Luxury cinema gold theme (CSS vars in globals.css)
 - Tests: Vitest with in-memory SQLite (`vitest run`). Tests don't touch `movies.db`.

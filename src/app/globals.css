@@ -203,3 +203,83 @@ body {
   opacity: 0.3;
   cursor: not-allowed;
 }
+
+/* ── Customer pool bubbles ────────────────────────────────────────────────── */
+/* Multi-directional drift - varies per bubble via animation-delay */
+@keyframes bubbleFloat {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  12.5% { transform: translate(12px, -8px) rotate(2deg); }
+  25% { transform: translate(-6px, -14px) rotate(-1deg); }
+  37.5% { transform: translate(-14px, 4px) rotate(1deg); }
+  50% { transform: translate(-8px, 12px) rotate(-2deg); }
+  62.5% { transform: translate(6px, 10px) rotate(1deg); }
+  75% { transform: translate(14px, -4px) rotate(-1deg); }
+  87.5% { transform: translate(8px, -10px) rotate(2deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+}
+
+@keyframes bubbleBob {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-8px) scale(1.03); }
+}
+
+@keyframes bubblePopIn {
+  from {
+    opacity: 0;
+    transform: scale(0);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes bubblePopOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0);
+  }
+}
+
+@keyframes bubbleTooltipIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.bubble-wrapper {
+  animation: bubbleFloat 8s ease-in-out infinite;
+}
+
+.bubble-orb {
+  animation: bubbleBob 4s ease-in-out infinite;
+}
+
+.bubble-wrapper:nth-child(odd) .bubble-orb {
+  animation-direction: reverse;
+}
+
+.bubble-wrapper:nth-child(3n) .bubble-orb {
+  animation-duration: 5.5s;
+}
+
+.bubble-wrapper:nth-child(5n) .bubble-orb {
+  animation-duration: 4.2s;
+}
+
+.bubble-enter {
+  animation: bubblePopIn 0.4s ease-out forwards;
+}
+
+.bubble-exit {
+  animation: bubblePopOut 0.3s ease-in forwards;
+}

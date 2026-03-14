@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 interface Customer {
   id: number;
@@ -17,34 +17,46 @@ interface Customer {
   notes: string;
 }
 
-const TYPE_LABEL: Record<string, { label: string; className: string }> = {
-  buyer: { label: "Ready to Buy", className: "bg-emerald-600/20 text-emerald-400 border-emerald-500/30" },
-  persuadable: { label: "Needs Persuasion", className: "bg-amber-600/20 text-amber-400 border-amber-500/30" },
-};
-
-const TIER_COLORS: Record<string, string> = {
-  None: "text-zinc-500",
-  Silver: "text-zinc-300",
-  Gold: "text-amber-400",
-  Platinum: "text-purple-400",
-};
-
 function formatLabel(s: string): string {
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+const POLL_INTERVAL_MS = 3000;
 
 export default function CustomersPanel() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "buyer" | "persuadable">("all");
+  const [hoveredId, setHoveredId] = useState<number | null>(null);
+  const prevIdsRef = useRef<Set<number>>(new Set());
+  const [newlyAddedIds, setNewlyAddedIds] = useState<Set<number>>(new Set());
 
-  useEffect(() => {
+  const fetchCustomers = () => {
     fetch("/api/customers")
       .then((r) => r.json())
-      .then((d) => {
+      .then((d: { customers: Customer[] }) => {
+        const currentIds = new Set(d.customers.map((c) => c.id));
+        const hadPrevious = prevIdsRef.current.size > 0;
+        const added = hadPrevious
+          ? d.customers.filter((c) => !prevIdsRef.current.has(c.id)).map((c) => c.id)
+          : [];
+        prevIdsRef.current = currentIds;
+        setNewlyAddedIds(new Set(added));
         setCustomers(d.customers);
         setLoading(false);
+        if (added.length > 0) {
+          setTimeout(() => setNewlyAddedIds(new Set()), 500);
+        }
       });
+  };
+
+  useEffect(() => {
+    fetchCustomers();
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(fetchCustomers, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
   }, []);
 
   const filtered = customers.filter(
@@ -60,14 +72,23 @@ export default function CustomersPanel() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-6 py-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="relative min-h-[calc(100vh-120px)] overflow-hidden px-6 py-8">
+      {/* Pool background */}
+      <div
+        className="absolute inset-0 -z-10 opacity-30"
+        style={{
+          background: "radial-gradient(ellipse 80% 60% at 50% 50%, rgba(91,143,217,0.08) 0%, transparent 70%)",
+        }}
+      />
+
+      {/* Header */}
+      <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold" style={{ color: "var(--text)" }}>
+          <h2 className="text-xl font-semibold" style={{ color: "var(--text-primary)" }}>
             Customer Pool
           </h2>
           <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-            20 stub customers — agent will create and modify later
+            Hover for details · Updates every 3s · Booked customers disappear
           </p>
         </div>
         <div className="flex gap-1 rounded-lg p-1" style={{ background: "var(--surface)" }}>
@@ -87,73 +108,135 @@ export default function CustomersPanel() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--border)" }}>
-        <table className="w-full text-left text-sm">
-          <thead className="uppercase" style={{ background: "var(--surface)", color: "var(--text-muted)" }}>
-            <tr>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Type</th>
-              <th className="px-4 py-3">Age</th>
-              <th className="px-4 py-3">Preferences</th>
-              <th className="px-4 py-3">Tier</th>
-              <th className="px-4 py-3">Frequency</th>
-              <th className="px-4 py-3">Budget</th>
-              <th className="px-4 py-3">Showtime</th>
-              <th className="px-4 py-3">Group</th>
-              <th className="px-4 py-3">Notes</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y" style={{ borderColor: "var(--border)" }}>
-            {filtered.map((c) => {
-              const typeInfo = TYPE_LABEL[c.customer_type] || TYPE_LABEL.buyer;
-              return (
-                <tr
-                  key={c.id}
-                  className="transition-colors hover:bg-zinc-900/50"
-                  style={{ background: "var(--bg)" }}
+      {/* Bubble pool */}
+      <div
+        className="relative mx-auto min-h-[500px]"
+        style={{
+          perspective: "1200px",
+          transformStyle: "preserve-3d",
+        }}
+      >
+        <div className="bubble-pool flex flex-wrap justify-center gap-8 py-4">
+          {filtered.map((c, i) => {
+            const isBuyer = c.customer_type === "buyer";
+            const isHovered = hoveredId === c.id;
+            const delay = (i % 7) * 0.4;
+            const duration = 4 + (i % 3) * 1.5;
+            const isNew = newlyAddedIds.has(c.id);
+
+            return (
+              <div
+                key={c.id}
+                className={`bubble-wrapper relative flex items-center justify-center ${isNew ? "bubble-enter" : ""}`}
+                style={{
+                  animationDelay: isNew ? undefined : `${delay}s`,
+                  animationDuration: isNew ? undefined : `${duration}s`,
+                }}
+              >
+                <div
+                  className="bubble-orb group relative flex h-20 w-20 cursor-pointer items-center justify-center transition-transform duration-300 hover:scale-110"
+                  onMouseEnter={() => setHoveredId(c.id)}
+                  onMouseLeave={() => setHoveredId(null)}
+                  style={{
+                    animationDelay: `${delay + 0.2}s`,
+                    animationDuration: `${duration + 0.5}s`,
+                  }}
                 >
-                  <td className="px-4 py-3 font-medium" style={{ color: "var(--text)" }}>
-                    {c.name}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${typeInfo.className}`}
-                    >
-                      {typeInfo.label}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3" style={{ color: "var(--text-muted)" }}>
-                    {c.age}
-                  </td>
-                  <td className="px-4 py-3" style={{ color: "var(--text-muted)" }}>
-                    {c.preferences}
-                  </td>
-                  <td className={`px-4 py-3 ${TIER_COLORS[c.loyalty_tier] || TIER_COLORS.None}`}>
-                    {c.loyalty_tier}
-                  </td>
-                  <td className="px-4 py-3" style={{ color: "var(--text-muted)" }}>
-                    {formatLabel(c.visit_frequency)}
-                  </td>
-                  <td className="px-4 py-3" style={{ color: "var(--text-muted)" }}>
-                    {formatLabel(c.budget_preference)}
-                  </td>
-                  <td className="px-4 py-3" style={{ color: "var(--text-muted)" }}>
-                    {formatLabel(c.preferred_showtime)}
-                  </td>
-                  <td className="px-4 py-3" style={{ color: "var(--text-muted)" }}>
-                    {c.group_size_preference === 1 ? "Solo" : c.group_size_preference === 2 ? "Date" : `${c.group_size_preference}+`}
-                  </td>
-                  <td className="max-w-[200px] truncate px-4 py-3 text-xs" style={{ color: "var(--text-muted)" }} title={c.notes}>
-                    {c.notes}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                  {/* 3D bubble surface */}
+                  <div
+                    className="absolute inset-0 rounded-full transition-all duration-300"
+                    style={{
+                      background: isBuyer
+                        ? "radial-gradient(circle at 30% 30%, rgba(167,243,208,0.6), rgba(110,231,183,0.45), rgba(52,211,153,0.3))"
+                        : "radial-gradient(circle at 30% 30%, rgba(254,240,138,0.6), rgba(253,224,71,0.45), rgba(250,204,21,0.3))",
+                      boxShadow: isBuyer
+                        ? "inset -3px -3px 8px rgba(0,0,0,0.15), inset 3px 3px 8px rgba(255,255,255,0.2), 0 6px 16px rgba(110,231,183,0.15)"
+                        : "inset -3px -3px 8px rgba(0,0,0,0.15), inset 3px 3px 8px rgba(255,255,255,0.2), 0 6px 16px rgba(253,224,71,0.15)",
+                      border: "1px solid rgba(255,255,255,0.15)",
+                      transform: "translateZ(0)",
+                    }}
+                  />
+                  {/* Name */}
+                  <span
+                    className="relative z-10 max-w-full truncate px-2 text-center text-xs font-medium"
+                    style={{
+                      color: "rgba(0,0,0,0.85)",
+                      textShadow: "0 1px 2px rgba(255,255,255,0.5)",
+                    }}
+                  >
+                    {c.name.split(" ")[0]}
+                  </span>
+                </div>
+
+                {/* Hover card */}
+                {isHovered && (
+                  <div
+                    className="bubble-tooltip absolute left-1/2 top-full z-50 mt-3 min-w-[240px] -translate-x-1/2 rounded-xl p-4 shadow-2xl"
+                    style={{
+                      background: "var(--surface-raised)",
+                      border: "1px solid var(--surface-border)",
+                      animation: "bubbleTooltipIn 0.2s ease-out",
+                    }}
+                    onMouseEnter={() => setHoveredId(c.id)}
+                    onMouseLeave={() => setHoveredId(null)}
+                  >
+                    <div className="space-y-2 text-sm">
+                      <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
+                        {c.name}
+                      </p>
+                      <p>
+                        <span style={{ color: "var(--text-muted)" }}>Type: </span>
+                        <span className={isBuyer ? "text-emerald-400" : "text-amber-400"}>
+                          {isBuyer ? "Ready to Buy" : "Needs Persuasion"}
+                        </span>
+                      </p>
+                      <p>
+                        <span style={{ color: "var(--text-muted)" }}>Age: </span>
+                        <span style={{ color: "var(--text-primary)" }}>{c.age}</span>
+                      </p>
+                      <p>
+                        <span style={{ color: "var(--text-muted)" }}>Prefers: </span>
+                        <span style={{ color: "var(--text-primary)" }}>{c.preferences}</span>
+                      </p>
+                      <p>
+                        <span style={{ color: "var(--text-muted)" }}>Tier: </span>
+                        <span style={{ color: "var(--text-primary)" }}>{c.loyalty_tier}</span>
+                      </p>
+                      <p>
+                        <span style={{ color: "var(--text-muted)" }}>Visits: </span>
+                        <span style={{ color: "var(--text-primary)" }}>{formatLabel(c.visit_frequency)}</span>
+                      </p>
+                      <p>
+                        <span style={{ color: "var(--text-muted)" }}>Budget: </span>
+                        <span style={{ color: "var(--text-primary)" }}>{formatLabel(c.budget_preference)}</span>
+                      </p>
+                      <p>
+                        <span style={{ color: "var(--text-muted)" }}>Showtime: </span>
+                        <span style={{ color: "var(--text-primary)" }}>{formatLabel(c.preferred_showtime)}</span>
+                      </p>
+                      <p>
+                        <span style={{ color: "var(--text-muted)" }}>Group: </span>
+                        <span style={{ color: "var(--text-primary)" }}>
+                          {c.group_size_preference === 1 ? "Solo" : c.group_size_preference === 2 ? "Date" : `${c.group_size_preference}+`}
+                        </span>
+                      </p>
+                      {c.notes && (
+                        <p className="pt-1 border-t border-zinc-700/50">
+                          <span style={{ color: "var(--text-muted)" }}>Notes: </span>
+                          <span style={{ color: "var(--text-secondary)" }}>{c.notes}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
-      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-        Showing {filtered.length} of {customers.length} customers
+
+      <p className="mt-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>
+        {filtered.length} customers in pool
       </p>
     </div>
   );

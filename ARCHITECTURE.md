@@ -10,8 +10,10 @@ CinemaAI is a **multi-agent AI theater simulation** where autonomous AI agents r
 graph TB
     subgraph Frontend["Frontend (React 19 + Next.js 16)"]
         Page["page.tsx<br/>Tab Switcher"]
-        Chat["Chat Tab<br/>Customer Chatbot"]
         Dash["Dashboard"]
+        CuratorTab["Curator Panel<br/>Add/retire movies"]
+        CustomersTab["Customers Panel<br/>Bubble pool, live updates"]
+        TimeTab["Time Control"]
 
         subgraph DashTabs["Dashboard Subtabs"]
             SimTab["Simulation<br/>Controls + TheaterGrid + KPIs"]
@@ -34,10 +36,11 @@ graph TB
     end
 
     subgraph API["API Routes"]
-        ChatAPI["/api/chat<br/>Customer Chatbot"]
         ClockAPI["/api/clock<br/>Clock Control"]
         StateAPI["/api/theater-state<br/>State Queries"]
         SimControl["/api/simulation/control<br/>Start/Stop/Reset"]
+        CuratorAPI["/api/agents/curator<br/>Curator Agent"]
+        CustomersAPI["/api/customers<br/>Customer Pool (excludes booked)"]
     end
 
     subgraph Engine["Simulation Engine"]
@@ -54,6 +57,7 @@ graph TB
         Opt["Optimizer<br/>claude-sonnet-4-6<br/>Fill rates, rebalance"]
         Sched["Scheduler<br/>claude-sonnet-4-6<br/>Add/cancel showtimes"]
         Promo["Promoter<br/>claude-sonnet-4-6<br/>Flash sales, promos"]
+        Curator["Curator<br/>claude-sonnet-4-6<br/>Add/retire movies, trends"]
         Mgr["Manager<br/>claude-haiku-4-5<br/>Help customers book"]
     end
 
@@ -72,8 +76,12 @@ graph TB
     end
 
     %% Frontend connections
-    Page --> Chat
     Page --> Dash
+    Page --> CuratorTab
+    Page --> CustomersTab
+    Page --> TimeTab
+    CuratorTab -->|"POST"| CuratorAPI
+    CustomersTab -->|"GET (poll 3s)"| CustomersAPI
     Dash --> DashTabs
     SimTab --> SimControls
     SimTab --> KPIBar
@@ -86,7 +94,6 @@ graph TB
     Stream -->|"day_start, wave_start,<br/>event, conversation,<br/>kpi, state, day_end"| Dash
 
     %% API
-    Chat -->|"POST"| ChatAPI
     SimControls -->|"POST"| SimControl
     Dash -->|"GET (poll)"| StateAPI
 
@@ -100,6 +107,8 @@ graph TB
     P1 --> Opt
     P1 --> Sched
     P1 --> Promo
+    CuratorAPI --> Curator
+    Curator --> DB
     P2 --> Spawner
     Spawner --> Active
     Spawner --> Passive
@@ -112,9 +121,9 @@ graph TB
     Mgr --> DB
     Active --> DB
     Passive --> DB
-    ChatAPI --> DB
     StateAPI --> TSC
     TSC --> DB
+    CustomersAPI --> DB
     SE --> EventStore
     Mgr --> WriteLock
     Sched --> WriteLock
@@ -254,6 +263,21 @@ erDiagram
         text summary
         text data
     }
+
+    customers {
+        int id PK
+        text name
+        text customer_type
+        int age
+        text preferences
+        text loyalty_tier
+        text visit_frequency
+        text budget_preference
+        text preferred_showtime
+        int interested_in_concessions
+        int group_size_preference
+        text notes
+    }
 ```
 
 ## Agent Details
@@ -263,6 +287,7 @@ erDiagram
 | **Optimizer** | Sonnet 4.6 | Every day | Analyze fill rates, flag low-fill for promos, request extra screenings | `getTheaterState`, `flagForPromotion`, `addExtraScreening`, `getGenreDistribution` |
 | **Scheduler** | Sonnet 4.6 | Every day | Add/cancel showtimes based on demand | `getTheaterAvailability`, `getActiveMovies`, `addShowtime`, `cancelShowtime` |
 | **Promoter** | Sonnet 4.6 | Every day | Create flash sales and promotions for struggling showtimes | `detectLowFillShowtimes`, `createFlashSale`, `createPromotion`, `getPromotionPerformance` |
+| **Curator** | Sonnet 4.6 | On demand | Curate movie catalog — add new films, retire underperformers | `addMovie`, `retireMovie`, `getGenreDistribution`, `getMoviePerformance`, `trendAnalysis` |
 | **Manager** | Haiku 4.5 | Per active customer | Help customers find movies and book tickets | `getNowShowing`, `getShowtimes`, `bookTickets` |
 | **Active Customer** | Haiku 4.5 | 3-7 per wave | Browse movies, talk to Manager, decide to book or leave | Talks to Manager agent |
 | **Passive Customer** | Deterministic | 1-3 per wave | Receive promotions, accept/reject based on preferences | No LLM — rule-based decision |
@@ -278,16 +303,27 @@ erDiagram
 7. **Customer personalities are data, not LLM-generated**: 25 predefined templates keep costs low.
 8. **Passive customers are deterministic**: No LLM call — just probability-based acceptance of promos.
 
+## Customer Pool (Bubble UI)
+
+The **Customers** tab shows a pool of potential customers as floating bubbles:
+- **Bubble UI**: 3D-style circles (green = Ready to Buy, amber = Needs Persuasion), uniform size, multi-directional drift animation
+- **Hover**: Full details (name, type, age, preferences, tier, etc.) in a tooltip card
+- **Live updates**: Polls `/api/customers` every 3 seconds
+- **New customers**: Pop-in animation when added to DB
+- **Booked customers**: Disappear from pool (matched by `customer_name` in bookings)
+- **Add customer**: `node scripts/add-customer.js` (edit script for name/details)
+
 ## File Structure
 
 ```
 src/
 ├── app/
-│   ├── page.tsx                          # Chat + Dashboard tabs
+│   ├── page.tsx                          # Dashboard + Curator + Customers + Time tabs
 │   └── api/
-│       ├── chat/route.ts                 # Customer chatbot (manual)
 │       ├── clock/route.ts                # Clock control
 │       ├── theater-state/route.ts        # State queries
+│       ├── customers/route.ts            # Customer pool (excludes booked)
+│       ├── agents/curator/route.ts       # Curator agent
 │       └── simulation/
 │           ├── stream/route.ts           # SSE event stream
 │           └── control/route.ts          # Start/stop/reset
@@ -315,5 +351,19 @@ src/
     ├── TheaterGrid.tsx                   # 15 theater cards grid
     ├── TheaterCard.tsx                   # Individual theater visualization
     ├── ActivityFeed.tsx                  # Agent action log
-    └── ConversationView.tsx             # Customer dialogue viewer
+    ├── ConversationView.tsx             # Customer dialogue viewer
+    ├── CuratorPanel.tsx                  # Curator agent chat UI
+    ├── CustomersPanel.tsx                # Bubble pool, hover for details
+    └── TimeControl.tsx                  # Time/simulation clock
+
+scripts/
+├── run-migration.js                     # Run migrations (npm run migrate)
+├── seed-customers.js                    # Seed 20 customers (npm run seed:customers)
+├── add-customer.js                      # Add single customer
+└── show-schema.js                       # Print DB schema (npm run db:schema)
+
+migrations/
+├── 001_curator_movies.sql               # synopsis, poster_url, is_active on movies
+├── 002_bookings_promotions.sql          # promotions, promo_codes, bookings
+└── 003_customers.sql                    # customers table
 ```
