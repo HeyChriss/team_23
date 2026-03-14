@@ -8,30 +8,24 @@ from datetime import datetime, timedelta
 # ── 15 Theater Rooms ──────────────────────────────────────────────────────────
 # Mix of sizes and screen types like a real multiplex
 THEATERS = [
-    {"name": "Theater 1",  "seat_count": 300, "screen_type": "IMAX"},
-    {"name": "Theater 2",  "seat_count": 250, "screen_type": "Dolby"},
-    {"name": "Theater 3",  "seat_count": 200, "screen_type": "Standard"},
-    {"name": "Theater 4",  "seat_count": 200, "screen_type": "Standard"},
-    {"name": "Theater 5",  "seat_count": 180, "screen_type": "3D"},
-    {"name": "Theater 6",  "seat_count": 180, "screen_type": "Standard"},
-    {"name": "Theater 7",  "seat_count": 150, "screen_type": "Standard"},
-    {"name": "Theater 8",  "seat_count": 150, "screen_type": "Dolby"},
-    {"name": "Theater 9",  "seat_count": 120, "screen_type": "Standard"},
-    {"name": "Theater 10", "seat_count": 120, "screen_type": "3D"},
-    {"name": "Theater 11", "seat_count": 100, "screen_type": "Standard"},
-    {"name": "Theater 12", "seat_count": 100, "screen_type": "Standard"},
-    {"name": "Theater 13", "seat_count": 80,  "screen_type": "Standard"},
-    {"name": "Theater 14", "seat_count": 80,  "screen_type": "Standard"},
-    {"name": "Theater 15", "seat_count": 60,  "screen_type": "Standard"},
+    {"name": "Theater 1",  "seat_count": 300},
+    {"name": "Theater 2",  "seat_count": 250},
+    {"name": "Theater 3",  "seat_count": 200},
+    {"name": "Theater 4",  "seat_count": 200},
+    {"name": "Theater 5",  "seat_count": 180},
+    {"name": "Theater 6",  "seat_count": 180},
+    {"name": "Theater 7",  "seat_count": 150},
+    {"name": "Theater 8",  "seat_count": 150},
+    {"name": "Theater 9",  "seat_count": 120},
+    {"name": "Theater 10", "seat_count": 120},
+    {"name": "Theater 11", "seat_count": 100},
+    {"name": "Theater 12", "seat_count": 100},
+    {"name": "Theater 13", "seat_count": 80},
+    {"name": "Theater 14", "seat_count": 80},
+    {"name": "Theater 15", "seat_count": 60},
 ]
 
-# Ticket pricing by screen type
-PRICE_BY_SCREEN = {
-    "IMAX": 18.00,
-    "Dolby": 16.00,
-    "3D": 15.00,
-    "Standard": 12.00,
-}
+BASE_TICKET_PRICE = 12.00
 
 # Time-of-day pricing multipliers
 TIME_MULTIPLIER = {
@@ -123,8 +117,7 @@ def schedule_day(movies: list, theaters: list, date_str: str) -> list:
 
             # Calculate price
             period = get_time_period(start_time)
-            base_price = PRICE_BY_SCREEN[theater["screen_type"]]
-            price = round(base_price * TIME_MULTIPLIER[period], 2)
+            price = round(BASE_TICKET_PRICE * TIME_MULTIPLIER[period], 2)
 
             theater_schedule.append((start_time, end_time))
             showtimes.append({
@@ -157,8 +150,8 @@ def main():
 
     for t in THEATERS:
         cursor.execute(
-            "INSERT INTO theaters (name, seat_count, screen_type) VALUES (?, ?, ?)",
-            (t["name"], t["seat_count"], t["screen_type"]),
+            "INSERT INTO theaters (name, seat_count) VALUES (?, ?)",
+            (t["name"], t["seat_count"]),
         )
         t["db_id"] = cursor.lastrowid
 
@@ -201,13 +194,8 @@ def main():
     print(f"  {len(THEATERS)} theater rooms")
     print(f"  {total_showtimes} showtimes over 7 days")
 
-    cursor.execute("SELECT screen_type, COUNT(*), SUM(seat_count) FROM theaters GROUP BY screen_type")
-    print("\nTheater breakdown:")
-    for row in cursor.fetchall():
-        print(f"  {row[0]}: {row[1]} rooms, {row[2]} total seats")
-
     cursor.execute("""
-        SELECT t.name, COUNT(s.id), t.seat_count, t.screen_type
+        SELECT t.name, COUNT(s.id), t.seat_count
         FROM theaters t
         LEFT JOIN showtimes s ON t.id = s.theater_id
         GROUP BY t.id
@@ -215,7 +203,7 @@ def main():
     """)
     print("\nShowtimes per theater:")
     for row in cursor.fetchall():
-        print(f"  {row[0]} ({row[3]}, {row[2]} seats): {row[1]} showings this week")
+        print(f"  {row[0]} ({row[2]} seats): {row[1]} showings this week")
 
     conn.close()
 
