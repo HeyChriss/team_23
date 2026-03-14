@@ -2,8 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ["better-sqlite3"],
-  // Use webpack for production builds (Turbopack has issues with native modules)
-  // Dev mode uses Turbopack by default and handles better-sqlite3 fine
+  // Disable compression so SSE events stream immediately without buffering
+  compress: false,
 };
 
 export default nextConfig;

@@ -107,6 +107,8 @@ class SimulationEngine {
     if (signal.aborted) return;
 
     // ── Phase 1: Strategic Agents (sequential) ──────────────────────────
+    // Yield between agents so the stream flushes events to the client
+    const tick = () => new Promise((r) => setTimeout(r, 0));
 
     // Optimizer
     try {
@@ -123,12 +125,14 @@ class SimulationEngine {
             data: action.data ? JSON.stringify(action.data) : undefined,
           },
         });
+        await tick();
       }
     } catch (e) {
       console.error("Optimizer error:", e);
     }
 
     if (signal.aborted) return;
+    await tick();
 
     // Scheduler
     try {
@@ -145,12 +149,14 @@ class SimulationEngine {
             data: action.data ? JSON.stringify(action.data) : undefined,
           },
         });
+        await tick();
       }
     } catch (e) {
       console.error("Scheduler error:", e);
     }
 
     if (signal.aborted) return;
+    await tick();
 
     // Promoter
     try {
@@ -167,12 +173,14 @@ class SimulationEngine {
             data: action.data ? JSON.stringify(action.data) : undefined,
           },
         });
+        await tick();
       }
     } catch (e) {
       console.error("Promoter error:", e);
     }
 
     if (signal.aborted) return;
+    await tick();
 
     // ── Phase 2: Customer Waves ─────────────────────────────────────────
 
@@ -202,6 +210,7 @@ class SimulationEngine {
             data: JSON.stringify({ customer: c.name, customerType: "active", genres: c.favoriteGenres, groupSize: c.groupSize }),
           },
         });
+        await tick();
       }
 
       summary.totalCustomers += activeCustomers.length;
@@ -214,10 +223,41 @@ class SimulationEngine {
         activeCustomers.map(async (c) => {
           try {
             const conv = await runActiveCustomer(c, waveTime);
-            // Emit immediately when THIS conversation finishes — don't wait for others
+            // Emit conversation + outcome event immediately — don't wait for others
             emit({ type: "conversation", data: conv });
+            if (conv.outcome === "booked") {
+              waveBooked++;
+              summary.totalBookings++;
+              emit({
+                type: "event",
+                data: {
+                  sim_time: waveTime,
+                  event_type: "customer_booked",
+                  agent: "customer",
+                  summary: `${c.name} booked tickets!`,
+                  data: JSON.stringify({ customer: c.name, ...(conv.bookingDetails || {}) }),
+                },
+              });
+            } else {
+              waveLeft++;
+              summary.totalLeft++;
+              emit({
+                type: "event",
+                data: {
+                  sim_time: waveTime,
+                  event_type: "customer_left",
+                  agent: "customer",
+                  summary: `${c.name} left without buying`,
+                  data: JSON.stringify({ customer: c.name }),
+                },
+              });
+            }
+            // Yield so the stream flushes this event to the client
+            await tick();
             return conv;
           } catch {
+            waveLeft++;
+            summary.totalLeft++;
             return {
               customerName: c.name, personality: c,
               messages: [{ role: "manager" as const, content: "[Error]" }],
@@ -226,12 +266,6 @@ class SimulationEngine {
           }
         })
       );
-
-      for (const r of activeResults) {
-        const conv = r.status === "fulfilled" ? r.value : null;
-        if (conv?.outcome === "booked") { waveBooked++; summary.totalBookings++; }
-        else { waveLeft++; summary.totalLeft++; }
-      }
 
       // Passive customers (respond to promotions)
       const passiveCustomers = spawnPassiveCustomers(wave.passiveCustomers)
@@ -250,14 +284,16 @@ class SimulationEngine {
             data: JSON.stringify({ customer: c.name, customerType: "passive" }),
           },
         });
+        await tick();
       }
 
       // Run passive customers in parallel, emit each result individually
-      const passiveSettled = await Promise.allSettled(
+      await Promise.allSettled(
         passiveCustomers.map(async (c) => {
           const pr = await runPassiveCustomer(c, waveTime);
-          // Emit immediately
           if (pr.accepted) {
+            waveBooked++;
+            summary.totalBookings++;
             emit({
               type: "event",
               data: {
@@ -269,6 +305,8 @@ class SimulationEngine {
               },
             });
           } else {
+            waveLeft++;
+            summary.totalLeft++;
             emit({
               type: "event",
               data: {
@@ -280,15 +318,9 @@ class SimulationEngine {
               },
             });
           }
-          return pr;
+          await tick();
         })
       );
-
-      for (const r of passiveSettled) {
-        const pr = r.status === "fulfilled" ? r.value : null;
-        if (pr?.accepted) { waveBooked++; summary.totalBookings++; }
-        else { waveLeft++; summary.totalLeft++; }
-      }
 
       // Emit KPIs after each wave
       const waveKpis = controller.getKPIs();

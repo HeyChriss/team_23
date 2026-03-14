@@ -30,7 +30,7 @@ function formatLabel(s: string): string {
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = 2000;
 
 export default function CustomersPanel() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -164,9 +164,9 @@ export default function CustomersPanel() {
           const added = d.customers.filter((c) => !prevIdsRef.current.has(c.id));
           added.forEach((c) => spawnBubble(c));
 
-          // Removed customers → exit them (simulate "bought")
+          // Removed customers → they were booked (the API filters out customers with bookings)
           const removed = [...prevIdsRef.current].filter((id) => !currentIds.has(id));
-          removed.forEach((id) => exitBubble(id, Math.random() > 0.3));
+          removed.forEach((id) => exitBubble(id, true));
         } else {
           // Initial load — add all as floating
           d.customers.forEach((c, i) => {
@@ -190,11 +190,11 @@ export default function CustomersPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ count }),
       });
-      // Fetch updated list after spawning
-      fetchCustomers();
     } finally {
       spawningRef.current = false;
       setSpawning(false);
+      // Always refresh after spawning so count updates
+      fetchCustomers();
     }
   }, [fetchCustomers]);
 
@@ -226,14 +226,15 @@ export default function CustomersPanel() {
     }
   }, [processing, exitBubble, fetchCustomers]);
 
-  // Auto-spawn when pool drops below threshold
+  // Auto-spawn when pool drops below threshold (use DB count as source of truth)
+  const poolCount = customers.length;
   useEffect(() => {
     if (loading || spawningRef.current) return;
-    if (customers.length < minPool) {
-      const deficit = minPool - customers.length;
-      spawnCustomers(Math.min(deficit, 10)); // max 10 at a time
+    if (poolCount < minPool) {
+      const deficit = minPool - poolCount;
+      spawnCustomers(Math.min(deficit, 10));
     }
-  }, [customers.length, minPool, loading, spawnCustomers]);
+  }, [poolCount, minPool, loading, spawnCustomers]);
 
   useEffect(() => {
     fetchCustomers();
@@ -242,6 +243,13 @@ export default function CustomersPanel() {
   useEffect(() => {
     const interval = setInterval(fetchCustomers, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
+  }, [fetchCustomers]);
+
+  // ── Refresh when simulation waves complete ───────────────────────────────
+  useEffect(() => {
+    const handler = () => fetchCustomers();
+    window.addEventListener("sim:customer-refresh", handler);
+    return () => window.removeEventListener("sim:customer-refresh", handler);
   }, [fetchCustomers]);
 
   // ── Listen for simulation engine customer events ─────────────────────────
@@ -334,7 +342,7 @@ export default function CustomersPanel() {
 
         <div className="flex items-center gap-3">
           <span className="text-xs tabular-nums" style={{ color: "var(--text-muted)" }}>
-            {customers.length} in pool
+            {poolCount} in pool
           </span>
           {spawning && (
             <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "var(--accent-green)" }}>
@@ -354,10 +362,9 @@ export default function CustomersPanel() {
         </button>
       </div>
 
-      {/* Two-column layout */}
-      <div className="flex gap-6" style={{ minHeight: "calc(100vh - 220px)" }}>
-        {/* ── Left: Customer Pool ──────────────────────────────────────────── */}
-        <div className="w-1/2 relative">
+      {/* Customer Pool */}
+      <div style={{ minHeight: "calc(100vh - 220px)" }}>
+        <div className="relative">
           <div className="surface-card rounded-2xl p-5 h-full flex flex-col overflow-hidden">
             {/* Spawn zone (top) */}
             <div className="relative flex items-center justify-center py-3 mb-2">
@@ -379,50 +386,47 @@ export default function CustomersPanel() {
 
             {/* Pool area */}
             <div className="relative flex-1 min-h-[400px]">
-              {/* Agent nodes */}
-              {activeConversations.size > 0 && (
-                <>
-                  {/* Manager Agent node */}
+              {/* Agent nodes — always visible */}
+              <>
+                {/* Manager Agent node */}
+                <div
+                  className="absolute z-30 flex flex-col items-center gap-1"
+                  style={{ left: "8%", top: "10%", transform: "translate(-50%, -50%)" }}
+                >
                   <div
-                    className="absolute z-30 flex flex-col items-center gap-1"
-                    style={{ left: "12%", top: "12%", transform: "translate(-50%, -50%)" }}
+                    className="flex h-14 w-14 items-center justify-center rounded-xl transition-all duration-300"
+                    style={{
+                      background: activeConversations.size > 0 ? "rgba(91,217,123,0.15)" : "rgba(91,217,123,0.06)",
+                      border: `2px solid ${activeConversations.size > 0 ? "var(--accent-green)" : "rgba(91,217,123,0.2)"}`,
+                      boxShadow: activeConversations.size > 0 ? "0 0 20px rgba(91,217,123,0.3)" : "none",
+                    }}
                   >
-                    <div
-                      className="flex h-14 w-14 items-center justify-center rounded-xl"
-                      style={{
-                        background: "rgba(91,217,123,0.15)",
-                        border: "2px solid var(--accent-green)",
-                        boxShadow: "0 0 20px rgba(91,217,123,0.3)",
-                        animation: "pulse 2s ease-in-out infinite",
-                      }}
-                    >
-                      <span className="text-xl">&#128188;</span>
-                    </div>
-                    <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: "var(--accent-green)" }}>
-                      Manager
-                    </span>
+                    <span className="text-xl">&#128188;</span>
                   </div>
+                  <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: activeConversations.size > 0 ? "var(--accent-green)" : "var(--text-muted)" }}>
+                    Manager
+                  </span>
+                </div>
 
-                  {/* Promoter Agent node */}
+                {/* Promoter Agent node */}
+                <div
+                  className="absolute z-30 flex flex-col items-center gap-1"
+                  style={{ left: "92%", top: "10%", transform: "translate(-50%, -50%)" }}
+                >
                   <div
-                    className="absolute z-30 flex flex-col items-center gap-1"
-                    style={{ left: "88%", top: "12%", transform: "translate(-50%, -50%)" }}
+                    className="flex h-14 w-14 items-center justify-center rounded-xl transition-all duration-300"
+                    style={{
+                      background: activeConversations.size > 0 ? "rgba(212,168,83,0.15)" : "rgba(212,168,83,0.06)",
+                      border: `2px solid ${activeConversations.size > 0 ? "var(--gold)" : "rgba(212,168,83,0.2)"}`,
+                      boxShadow: activeConversations.size > 0 ? "0 0 20px rgba(212,168,83,0.3)" : "none",
+                    }}
                   >
-                    <div
-                      className="flex h-14 w-14 items-center justify-center rounded-xl"
-                      style={{
-                        background: "rgba(212,168,83,0.15)",
-                        border: "2px solid var(--gold)",
-                        boxShadow: "0 0 20px rgba(212,168,83,0.3)",
-                        animation: "pulse 2s ease-in-out infinite",
-                      }}
-                    >
-                      <span className="text-xl">&#128227;</span>
-                    </div>
-                    <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: "var(--gold)" }}>
-                      Promoter
-                    </span>
+                    <span className="text-xl">&#128227;</span>
                   </div>
+                  <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: activeConversations.size > 0 ? "var(--gold)" : "var(--text-muted)" }}>
+                    Promoter
+                  </span>
+                </div>
 
                   {/* SVG connection lines */}
                   <svg
@@ -463,7 +467,6 @@ export default function CustomersPanel() {
                       })}
                   </svg>
                 </>
-              )}
 
               {filteredBubbles.map((b) => {
                 const c = b.customer;
@@ -612,109 +615,11 @@ export default function CustomersPanel() {
             </div>
 
             <p className="mt-2 text-center text-xs" style={{ color: "var(--text-muted)" }}>
-              {filteredBubbles.filter((b) => b.state === "floating").length} customers in pool
+              {poolCount} customers in pool
             </p>
           </div>
         </div>
 
-        {/* ── Right: Promotions Agent ──────────────────────────────────────── */}
-        <div className="w-1/2 relative">
-          <div className="surface-card rounded-2xl p-5 h-full flex flex-col">
-            <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.15em]" style={{ color: "var(--gold)" }}>
-              Promotions Agent
-            </h3>
-
-            {/* Process controls */}
-            <div className="flex gap-2 mb-4">
-              <button
-                onClick={() => processCustomers(3)}
-                disabled={processing || filteredBubbles.filter((b) => b.state === "floating").length === 0}
-                className="flex-1 rounded-xl py-3 text-sm font-semibold transition-all hover:translate-y-[-1px] disabled:opacity-40"
-                style={{ background: "var(--gold)", color: "#0a0a0a" }}
-              >
-                {processing ? "Processing..." : "Process 3 Customers"}
-              </button>
-              <button
-                onClick={() => processCustomers(5)}
-                disabled={processing || filteredBubbles.filter((b) => b.state === "floating").length === 0}
-                className="flex-1 rounded-xl py-3 text-sm font-semibold transition-all hover:translate-y-[-1px] disabled:opacity-40"
-                style={{ background: "var(--surface)", border: "1px solid var(--surface-border)", color: "var(--text-secondary)" }}
-              >
-                {processing ? "..." : "Process 5"}
-              </button>
-            </div>
-
-            {processing && (
-              <div className="mb-4 flex items-center justify-center gap-2 py-4">
-                <div className="h-3 w-3 rounded-full animate-pulse" style={{ background: "var(--gold)" }} />
-                <span className="text-sm" style={{ color: "var(--gold)" }}>
-                  Customers are deciding...
-                </span>
-              </div>
-            )}
-
-            {/* Results feed */}
-            <div className="flex-1 overflow-y-auto space-y-2">
-              {lastResults.length === 0 && !processing && (
-                <div className="flex flex-col items-center justify-center h-full text-center py-8">
-                  <div
-                    className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl"
-                    style={{ background: "var(--gold-glow)", border: "1px solid rgba(212,168,83,0.2)" }}
-                  >
-                    <span className="text-3xl">&#127915;</span>
-                  </div>
-                  <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                    Process customers to see their decisions
-                  </p>
-                  <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
-                    Each customer sees current movies &amp; promos,<br />then decides to buy or leave
-                  </p>
-                </div>
-              )}
-
-              {lastResults.map((r, i) => {
-                const bought = r.outcome === "bought";
-                return (
-                  <div
-                    key={i}
-                    className="animate-fade-in rounded-lg p-3"
-                    style={{
-                      background: bought ? "rgba(91,217,123,0.08)" : "rgba(217,91,91,0.08)",
-                      border: `1px solid ${bought ? "rgba(91,217,123,0.2)" : "rgba(217,91,91,0.2)"}`,
-                    }}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                        {r.customerName}
-                      </span>
-                      <span
-                        className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                        style={{
-                          color: bought ? "var(--accent-green)" : "var(--accent-red)",
-                          background: bought ? "rgba(91,217,123,0.15)" : "rgba(217,91,91,0.15)",
-                        }}
-                      >
-                        {bought ? "BOUGHT" : "LEFT"}
-                      </span>
-                    </div>
-                    <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                      {String((r.details as Record<string, unknown>)?.reasoning || "No reason given")}
-                    </p>
-                    {bought && !!(r.details as Record<string, unknown>)?.movie && (() => {
-                      const d = r.details as Record<string, unknown>;
-                      return (
-                        <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
-                          {String(d.movie)} &middot; {Number(d.tickets)} ticket{Number(d.tickets) > 1 ? "s" : ""} &middot; ${Number(d.totalPrice)?.toFixed(2)}
-                          {d.promoUsed ? <span style={{ color: "var(--gold)" }}> &middot; used {String(d.promoUsed)}</span> : null}
-                        </p>
-                      );
-                    })()}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

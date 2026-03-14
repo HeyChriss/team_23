@@ -174,6 +174,8 @@ export default function SimulationPanel() {
         sim_time: "", event_type: "tick_end", agent: "engine",
         summary: `${data.wave.charAt(0).toUpperCase() + data.wave.slice(1)} wave: ${data.booked} booked, ${data.left} left`,
       }]);
+      // Tell CustomerPanel to refresh from DB after each wave
+      window.dispatchEvent(new CustomEvent("sim:customer-refresh"));
     });
 
     es.addEventListener("event", (e) => {
