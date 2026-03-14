@@ -5,8 +5,9 @@ import { useState } from "react";
 import Dashboard from "@/components/Dashboard";
 import CuratorPanel from "@/components/CuratorPanel";
 import TimeControl from "@/components/TimeControl";
+import CustomersPanel from "@/components/CustomersPanel";
 
-type Tab = "chat" | "dashboard" | "curator" | "time";
+type Tab = "chat" | "dashboard" | "curator" | "time" | "customers";
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("chat");
@@ -40,6 +41,7 @@ export default function Home() {
               { key: "chat", label: "Chat" },
               { key: "dashboard", label: "Dashboard" },
               { key: "curator", label: "Curator" },
+              { key: "customers", label: "Customers" },
               { key: "time", label: "Time" },
             ] as { key: Tab; label: string }[]).map(({ key, label }) => (
               <button
@@ -65,6 +67,13 @@ export default function Home() {
       {tab === "curator" && (
         <main className="flex-1 overflow-y-auto">
           <CuratorPanel />
+        </main>
+      )}
+
+      {/* ── Customers Tab ─────────────────────────────────────────────────── */}
+      {tab === "customers" && (
+        <main className="flex-1 overflow-y-auto">
+          <CustomersPanel />
         </main>
       )}
 

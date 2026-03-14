@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "migrate": "node scripts/run-migration.js",
+    "db:schema": "node scripts/show-schema.js",
+    "seed:customers": "node scripts/seed-customers.js"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.58",
