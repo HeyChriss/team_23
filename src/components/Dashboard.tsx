@@ -1,8 +1,14 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import SimulationControls from "./SimulationControls";
+import KPIBar from "./KPIBar";
+import TheaterGrid from "./TheaterGrid";
+import ActivityFeed from "./ActivityFeed";
+import ConversationView from "./ConversationView";
+import type { SimulationEvent, ConversationEntry } from "@/lib/agents/types";
 
-// ── Types (from TheaterStateController) ──────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
 
 interface KPIs {
   total_revenue: number;
@@ -99,7 +105,7 @@ interface FullState {
   simTime: string;
 }
 
-type SubTab = "overview" | "theaters" | "movies" | "schedule" | "alerts";
+type SubTab = "simulation" | "activity" | "conversations" | "overview" | "theaters" | "movies" | "schedule" | "alerts";
 
 const STATUS_BADGE: Record<string, string> = {
   scheduled: "bg-[#2a2a30] text-[#8a8880]",
@@ -131,39 +137,29 @@ function FillButton({ showtimeId, seatsAvailable, onUpdate }: {
   const [particles, setParticles] = useState<{ id: number; x: number; emoji: string }[]>([]);
   const nextId = useRef(0);
 
-  // Sync when parent data refreshes
   useEffect(() => {
     localSeats.current = seatsAvailable;
     setIsFull(seatsAvailable <= 0);
   }, [seatsAvailable]);
 
-  const TICKET_EMOJIS = ["🎟️", "🎫", "🎬", "🍿"];
+  const TICKET_EMOJIS = ["\uD83C\uDF9F\uFE0F", "\uD83C\uDFAB", "\uD83C\uDFAC", "\uD83C\uDF7F"];
 
   const spawnParticle = () => {
     const id = nextId.current++;
     const x = Math.random() * 60 - 30;
     const emoji = TICKET_EMOJIS[Math.floor(Math.random() * TICKET_EMOJIS.length)];
     setParticles((prev) => [...prev, { id, x, emoji }]);
-    setTimeout(() => {
-      setParticles((prev) => prev.filter((p) => p.id !== id));
-    }, 1000);
+    setTimeout(() => setParticles((prev) => prev.filter((p) => p.id !== id)), 1000);
   };
 
   const stopFilling = useCallback(() => {
     setFilling(false);
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
     onUpdate();
   }, [onUpdate]);
 
   const doBookAndAnimate = useCallback(() => {
-    if (localSeats.current <= 0) {
-      setIsFull(true);
-      stopFilling();
-      return;
-    }
+    if (localSeats.current <= 0) { setIsFull(true); stopFilling(); return; }
     localSeats.current = Math.max(0, localSeats.current - 5);
     if (localSeats.current <= 0) setIsFull(true);
     spawnParticle();
@@ -183,33 +179,18 @@ function FillButton({ showtimeId, seatsAvailable, onUpdate }: {
 
   return (
     <div className="relative">
-      {/* Floating ticket particles */}
       {particles.map((p) => (
-        <span
-          key={p.id}
-          className="pointer-events-none absolute text-sm"
-          style={{
-            left: "50%",
-            bottom: "100%",
-            animation: "ticketFloat 1s ease-out forwards",
-            transform: `translateX(${p.x}px)`,
-          }}
-        >
+        <span key={p.id} className="pointer-events-none absolute text-sm"
+          style={{ left: "50%", bottom: "100%", animation: "ticketFloat 1s ease-out forwards", transform: `translateX(${p.x}px)` }}>
           {p.emoji}
         </span>
       ))}
-      <button
-        onMouseEnter={startFilling}
-        onMouseLeave={stopFilling}
-        disabled={isFull}
+      <button onMouseEnter={startFilling} onMouseLeave={stopFilling} disabled={isFull}
         className={`w-20 rounded-lg px-4 py-2 text-sm font-medium text-center transition-all ${
-          isFull
-            ? "bg-[#19191d] text-[#3a3a40] cursor-not-allowed"
-            : filling
-              ? "bg-[#5bd97b] text-[#0a0a0a] animate-pulse"
-              : "bg-[#2a2a30] text-[#8a8880] hover:bg-[#5bd97b] hover:text-[#0a0a0a]"
-        }`}
-      >
+          isFull ? "bg-[#19191d] text-[#3a3a40] cursor-not-allowed"
+          : filling ? "bg-[#5bd97b] text-[#0a0a0a] animate-pulse"
+          : "bg-[#2a2a30] text-[#8a8880] hover:bg-[#5bd97b] hover:text-[#0a0a0a]"
+        }`}>
         {isFull ? "Full" : filling ? "Filling..." : "Fill"}
       </button>
     </div>
@@ -231,7 +212,7 @@ function GuideBlock({ showtime: s, left, width, onUpdate }: {
   const [particles, setParticles] = useState<{ id: number; x: number; y: number; dx: number; emoji: string }[]>([]);
   const nextId = useRef(0);
 
-  const TICKET_EMOJIS = ["🎟️", "🎫", "🎬", "🍿"];
+  const TICKET_EMOJIS = ["\uD83C\uDF9F\uFE0F", "\uD83C\uDFAB", "\uD83C\uDFAC", "\uD83C\uDF7F"];
 
   useEffect(() => {
     localSeats.current = s.seats_available;
@@ -243,25 +224,17 @@ function GuideBlock({ showtime: s, left, width, onUpdate }: {
     const dx = Math.random() * 50 - 25;
     const emoji = TICKET_EMOJIS[Math.floor(Math.random() * TICKET_EMOJIS.length)];
     setParticles((prev) => [...prev, { id, x: mousePos.current.x, y: mousePos.current.y, dx, emoji }]);
-    setTimeout(() => {
-      setParticles((prev) => prev.filter((p) => p.id !== id));
-    }, 800);
+    setTimeout(() => setParticles((prev) => prev.filter((p) => p.id !== id)), 800);
   }, []);
 
   const stopFilling = useCallback(() => {
     setFilling(false);
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
     onUpdate();
   }, [onUpdate]);
 
   const doBook = useCallback(() => {
-    if (localSeats.current <= 0) {
-      stopFilling();
-      return;
-    }
+    if (localSeats.current <= 0) { stopFilling(); return; }
     localSeats.current = Math.max(0, localSeats.current - 5);
     setLocalFill(Math.round(((s.seat_count - localSeats.current) / s.seat_count) * 1000) / 10);
     spawnParticle();
@@ -298,41 +271,21 @@ function GuideBlock({ showtime: s, left, width, onUpdate }: {
       onMouseLeave={stopFilling}
       onMouseMove={handleMouseMove}
       className={`absolute top-1.5 bottom-1.5 rounded-md overflow-visible cursor-pointer transition-all ${filling ? "ring-1 ring-[#5bd97b] scale-[1.02] z-10" : ""}`}
-      style={{
-        left: `${left}%`,
-        width: `${width}%`,
-        background: "var(--surface)",
-        border: `1px solid ${fillColor}`,
-        minWidth: "2px",
-      }}
-      title={`${s.movie_name}\n${s.start_time}–${s.end_time}\n${localSeats.current}/${s.seat_count} seats (${Math.round(localFill)}% full)\n$${s.ticket_price.toFixed(2)}\nHover to sell tickets`}
+      style={{ left: `${left}%`, width: `${width}%`, background: "var(--surface)", border: `1px solid ${fillColor}`, minWidth: "2px" }}
+      title={`${s.movie_name}\n${s.start_time}\u2013${s.end_time}\n${localSeats.current}/${s.seat_count} seats (${Math.round(localFill)}% full)\n$${s.ticket_price.toFixed(2)}\nHover to sell tickets`}
     >
-      {/* Particles flying from cursor */}
       {particles.map((p) => (
-        <span
-          key={p.id}
-          className="pointer-events-none absolute text-sm"
-          style={{
-            left: `${p.x}px`,
-            top: `${p.y}px`,
-            animation: "ticketFloat 0.8s ease-out forwards",
-            transform: `translateX(${p.dx}px)`,
-            zIndex: 50,
-          }}
-        >
+        <span key={p.id} className="pointer-events-none absolute text-sm"
+          style={{ left: `${p.x}px`, top: `${p.y}px`, animation: "ticketFloat 0.8s ease-out forwards", transform: `translateX(${p.dx}px)`, zIndex: 50 }}>
           {p.emoji}
         </span>
       ))}
       <div className="absolute inset-0 rounded-md overflow-hidden">
-        <div
-          className="absolute bottom-0 left-0 h-1 transition-all duration-200"
-          style={{ width: `${localFill}%`, background: fillColor }}
-        />
+        <div className="absolute bottom-0 left-0 h-1 transition-all duration-200"
+          style={{ width: `${localFill}%`, background: fillColor }} />
         {width > 4 && (
           <div className="px-1.5 py-1 truncate">
-            <span className="text-[10px] font-medium" style={{ color: "var(--text-primary)" }}>
-              {s.movie_name}
-            </span>
+            <span className="text-[10px] font-medium" style={{ color: "var(--text-primary)" }}>{s.movie_name}</span>
           </div>
         )}
       </div>
@@ -340,53 +293,229 @@ function GuideBlock({ showtime: s, left, width, onUpdate }: {
   );
 }
 
+// ── Main Dashboard ──────────────────────────────────────────────────────────
+
 export default function Dashboard() {
+  // Analytics state (existing)
   const [state, setState] = useState<FullState | null>(null);
   const [showtimes, setShowtimes] = useState<ShowtimeStatus[]>([]);
   const [movies, setMovies] = useState<MoviePerformance[]>([]);
   const [loading, setLoading] = useState(true);
-  const [subTab, setSubTab] = useState<SubTab>("overview");
+  const [subTab, setSubTab] = useState<SubTab>("simulation");
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [selectedTheater, setSelectedTheater] = useState<number | null>(null);
   const [movieSearch, setMovieSearch] = useState("");
 
+  // Simulation state
+  const [simRunning, setSimRunning] = useState(false);
+  const [dayNumber, setDayNumber] = useState(0);
+  const [currentDate, setCurrentDate] = useState("");
+  const [currentWave, setCurrentWave] = useState("");
+  const [simTime, setSimTime] = useState("");
+  const [simEvents, setSimEvents] = useState<SimulationEvent[]>([]);
+  const [simConversations, setSimConversations] = useState<ConversationEntry[]>([]);
+  const [simKpis, setSimKpis] = useState<KPIs | null>(null);
+  const [simTheaters, setSimTheaters] = useState<TheaterSummary[]>([]);
+  const eventSourceRef = useRef<EventSource | null>(null);
+
+  // ── Analytics data fetch ──────────────────────────────────────────────
+
   const fetchData = useCallback(async () => {
-    const [fullRes, showtimeRes, movieRes] = await Promise.all([
-      fetch("/api/theater-state?view=full"),
-      fetch("/api/theater-state?view=showtimes"),
-      fetch("/api/theater-state?view=movies&limit=100"),
-    ]);
-    const full: FullState = await fullRes.json();
-    const st = await showtimeRes.json();
-    const mv = await movieRes.json();
+    try {
+      const [fullRes, showtimeRes, movieRes] = await Promise.all([
+        fetch("/api/theater-state?view=full"),
+        fetch("/api/theater-state?view=showtimes"),
+        fetch("/api/theater-state?view=movies&limit=100"),
+      ]);
+      const full: FullState = await fullRes.json();
+      const st = await showtimeRes.json();
+      const mv = await movieRes.json();
 
-    setState(full);
-    setShowtimes(st.showtimes || []);
-    setMovies(mv.movies || []);
+      setState(full);
+      setShowtimes(st.showtimes || []);
+      setMovies(mv.movies || []);
 
-    if (!selectedDate && full.dailySnapshots.length > 0) {
-      setSelectedDate(full.dailySnapshots[0].date);
+      // Also update sim state from analytics if no sim-specific data yet
+      if (!simKpis) setSimKpis(full.kpis);
+      if (simTheaters.length === 0) setSimTheaters(full.theaters);
+
+      if (!selectedDate && full.dailySnapshots.length > 0) {
+        setSelectedDate(full.dailySnapshots[0].date);
+      }
+      setLoading(false);
+    } catch {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [selectedDate]);
+  }, [selectedDate, simKpis, simTheaters.length]);
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 10000); // refresh every 10s
+    const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  // ── Simulation SSE ────────────────────────────────────────────────────
+
+  const startSimulation = useCallback(() => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+
+    setSimRunning(true);
+    setSimEvents([]);
+    setSimConversations([]);
+
+    const es = new EventSource("/api/simulation/stream");
+    eventSourceRef.current = es;
+
+    es.addEventListener("day_start", (e) => {
+      const data = JSON.parse(e.data);
+      setDayNumber(data.dayNumber);
+      setCurrentDate(data.date);
+      setSimTime(data.simTime);
+      setCurrentWave("");
+      setSimEvents((prev) => [...prev.slice(-80), {
+        sim_time: data.simTime,
+        event_type: "tick_start",
+        agent: "engine",
+        summary: `Day ${data.dayNumber} started (${data.date})`,
+      }]);
+    });
+
+    es.addEventListener("day_end", (e) => {
+      const data = JSON.parse(e.data);
+      setCurrentWave("");
+      if (data.kpis) setSimKpis(data.kpis as KPIs);
+      setSimEvents((prev) => [...prev.slice(-80), {
+        sim_time: data.date,
+        event_type: "tick_end",
+        agent: "engine",
+        summary: `Day ${data.dayNumber} ended — ${data.summary.totalBookings} bookings, ${data.summary.totalLeft} left`,
+      }]);
+      // Refresh analytics after each day
+      fetchData();
+    });
+
+    es.addEventListener("wave_start", (e) => {
+      const data = JSON.parse(e.data);
+      setCurrentWave(data.wave);
+      setSimEvents((prev) => [...prev.slice(-80), {
+        sim_time: data.timeLabel,
+        event_type: "tick_start",
+        agent: "engine",
+        summary: `${data.wave.charAt(0).toUpperCase() + data.wave.slice(1)} wave started`,
+      }]);
+    });
+
+    es.addEventListener("wave_end", (e) => {
+      const data = JSON.parse(e.data);
+      setSimEvents((prev) => [...prev.slice(-80), {
+        sim_time: "",
+        event_type: "tick_end",
+        agent: "engine",
+        summary: `${data.wave.charAt(0).toUpperCase() + data.wave.slice(1)} wave: ${data.booked} booked, ${data.left} left`,
+      }]);
+    });
+
+    es.addEventListener("event", (e) => {
+      const data = JSON.parse(e.data) as SimulationEvent;
+      setSimEvents((prev) => [...prev.slice(-80), data]);
+    });
+
+    es.addEventListener("conversation", (e) => {
+      const data = JSON.parse(e.data) as ConversationEntry;
+      setSimConversations((prev) => [...prev.slice(-50), data]);
+    });
+
+    es.addEventListener("kpi", (e) => {
+      const data = JSON.parse(e.data) as KPIs;
+      setSimKpis(data);
+    });
+
+    es.addEventListener("state", (e) => {
+      const data = JSON.parse(e.data);
+      if (data.kpis) setSimKpis(data.kpis as KPIs);
+      if (data.theaters) setSimTheaters(data.theaters as TheaterSummary[]);
+    });
+
+    es.addEventListener("stopped", () => {
+      setSimRunning(false);
+      setCurrentWave("");
+      fetchData();
+    });
+
+    es.addEventListener("error", () => {
+      setSimRunning(false);
+      setCurrentWave("");
+    });
+
+    es.onerror = () => {
+      setSimRunning(false);
+      setCurrentWave("");
+      es.close();
+      eventSourceRef.current = null;
+    };
+  }, [fetchData]);
+
+  const stopSimulation = useCallback(async () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+    await fetch("/api/simulation/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "stop" }),
+    });
+    setSimRunning(false);
+    setCurrentWave("");
+    fetchData();
+  }, [fetchData]);
+
+  const resetSimulation = useCallback(async () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+    await fetch("/api/simulation/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "reset" }),
+    });
+    setSimRunning(false);
+    setDayNumber(0);
+    setCurrentDate("");
+    setCurrentWave("");
+    setSimTime("");
+    setSimEvents([]);
+    setSimConversations([]);
+    setSimKpis(null);
+    setSimTheaters([]);
+    fetchData();
+  }, [fetchData]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
+  }, []);
+
+  // ── Render ────────────────────────────────────────────────────────────
 
   if (loading || !state) {
     return (
       <div className="flex items-center justify-center py-32">
-        <span className="animate-pulse text-[#8a8880] text-lg">
-          Loading theater state...
-        </span>
+        <span className="animate-pulse text-[#8a8880] text-lg">Loading theater state...</span>
       </div>
     );
   }
 
   const { kpis } = state;
+  const displayKpis = simKpis || kpis;
+  const displayTheaters = simTheaters.length > 0 ? simTheaters : state.theaters;
 
   const filteredShowtimes = showtimes.filter((s) => {
     if (selectedDate && s.show_date !== selectedDate) return false;
@@ -403,42 +532,18 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-6">
-      {/* Sim time indicator */}
-      <div className="mb-5 flex items-center justify-between animate-fade-in">
-        <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-          Simulation Time:{" "}
-          <span style={{ color: "var(--text-secondary)" }}>
-            {new Date(state.simTime).toLocaleString("en-US", {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </span>
-        </div>
-        {state.alerts.length > 0 && (
-          <button
-            onClick={() => setSubTab("alerts")}
-            className="rounded-full px-3 py-1 text-xs font-medium"
-            style={{ background: "var(--gold-glow)", color: "var(--gold)", border: "1px solid rgba(212,168,83,0.25)" }}
-          >
-            {state.alerts.length} alert{state.alerts.length !== 1 ? "s" : ""}
-          </button>
-        )}
-      </div>
-
       {/* Sub-tabs */}
-      <div className="mb-6 flex gap-1 rounded-lg p-1" style={{ background: "var(--surface)" }}>
-        {(
-          [
-            ["overview", "Overview"],
-            ["theaters", "Theaters"],
-            ["movies", "Movies"],
-            ["schedule", "Schedule"],
-            ["alerts", `Alerts (${state.alerts.length})`],
-          ] as [SubTab, string][]
-        ).map(([key, label]) => (
+      <div className="mb-5 flex gap-1 rounded-lg p-1 animate-fade-in" style={{ background: "var(--surface)" }}>
+        {([
+          ["simulation", "Simulation"],
+          ["activity", "Activity"],
+          ["conversations", `Conversations (${simConversations.length})`],
+          ["overview", "Analytics"],
+          ["theaters", "Theaters"],
+          ["movies", "Movies"],
+          ["schedule", "Schedule"],
+          ["alerts", `Alerts (${state.alerts.length})`],
+        ] as [SubTab, string][]).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setSubTab(key)}
@@ -449,9 +554,78 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* ── Overview ────────────────────────────────────── */}
+      {/* ── Simulation ─────────────────────────────────────── */}
+      {subTab === "simulation" && (
+        <div className="space-y-4 animate-fade-in">
+          <SimulationControls
+            isRunning={simRunning}
+            dayNumber={dayNumber}
+            currentDate={currentDate}
+            currentWave={currentWave}
+            simTime={simTime}
+            onStart={startSimulation}
+            onStop={stopSimulation}
+            onReset={resetSimulation}
+          />
+
+          <KPIBar
+            revenue={displayKpis.total_revenue}
+            ticketsSold={displayKpis.total_tickets_sold}
+            activePromos={displayKpis.total_promos_active}
+            avgFillRate={displayKpis.avg_fill_rate}
+            totalBookings={displayKpis.total_bookings}
+            dayNumber={dayNumber}
+          />
+
+          <div>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.15em] gold-text">
+              Theater Status
+            </h3>
+            <TheaterGrid theaters={displayTheaters} />
+          </div>
+
+          {/* Recent activity preview */}
+          {simEvents.length > 0 && (
+            <div className="surface-card rounded-xl p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.15em] gold-text">
+                  Recent Activity
+                </h3>
+                <button
+                  onClick={() => setSubTab("activity")}
+                  className="text-xs" style={{ color: "var(--gold)" }}
+                >
+                  View All
+                </button>
+              </div>
+              <ActivityFeed events={simEvents.slice(-8)} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Activity Feed ──────────────────────────────────── */}
+      {subTab === "activity" && (
+        <div className="animate-fade-in">
+          <div className="surface-card rounded-xl p-5">
+            <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.15em] gold-text">
+              Simulation Activity Log
+            </h3>
+            <ActivityFeed events={simEvents} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Conversations ──────────────────────────────────── */}
+      {subTab === "conversations" && (
+        <div className="animate-fade-in">
+          <ConversationView conversations={simConversations} />
+        </div>
+      )}
+
+      {/* ── Overview / Analytics ───────────────────────────── */}
       {subTab === "overview" && (
-        <div className="space-y-6">
+        <div className="space-y-6 animate-fade-in">
           {/* KPI cards */}
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {[
@@ -460,10 +634,7 @@ export default function Dashboard() {
               { label: "Avg Fill Rate", value: `${kpis.avg_fill_rate}%`, sub: `${kpis.sold_out_count} sold out` },
               { label: "Avg Booking", value: formatCurrency(kpis.avg_booking_value), sub: `${kpis.tickets_per_showtime} tickets/show` },
             ].map((card) => (
-              <div
-                key={card.label}
-                className="surface-card rounded-xl p-5"
-              >
+              <div key={card.label} className="surface-card rounded-xl p-5">
                 <p className="text-sm text-[#8a8880]">{card.label}</p>
                 <p className="mt-1 text-3xl font-bold">{card.value}</p>
                 <p className="mt-1 text-xs text-[#5a5850]">{card.sub}</p>
@@ -489,9 +660,7 @@ export default function Dashboard() {
 
           {/* Genre trends */}
           <div className="surface-card rounded-xl p-5">
-            <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.15em] text-[#d4a853]">
-              Genre Performance
-            </h3>
+            <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.15em] text-[#d4a853]">Genre Performance</h3>
             <div className="overflow-hidden rounded-lg border border-[#2a2a30]">
               <table className="w-full text-left text-sm">
                 <thead className="bg-[#111113] text-xs uppercase text-zinc-500">
@@ -513,10 +682,8 @@ export default function Dashboard() {
                       <td className="px-4 py-2">
                         <div className="flex items-center gap-2">
                           <div className="h-1.5 w-12 overflow-hidden rounded-full bg-zinc-800">
-                            <div
-                              className={`h-full rounded-full ${g.avg_fill_rate > 60 ? "bg-green-500" : g.avg_fill_rate > 30 ? "bg-yellow-500" : "bg-red-500"}`}
-                              style={{ width: `${Math.min(g.avg_fill_rate, 100)}%` }}
-                            />
+                            <div className={`h-full rounded-full ${g.avg_fill_rate > 60 ? "bg-green-500" : g.avg_fill_rate > 30 ? "bg-yellow-500" : "bg-red-500"}`}
+                              style={{ width: `${Math.min(g.avg_fill_rate, 100)}%` }} />
                           </div>
                           <span className="text-xs text-[#8a8880]">{g.avg_fill_rate}%</span>
                         </div>
@@ -528,36 +695,21 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Daily revenue chart */}
+          {/* Daily chart */}
           <div className="surface-card rounded-xl p-5">
-            <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.15em] text-[#d4a853]">
-              Daily Performance
-            </h3>
+            <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.15em] text-[#d4a853]">Daily Performance</h3>
             <div className="flex items-end gap-2">
               {state.dailySnapshots.map((d) => {
                 const maxRev = Math.max(...state.dailySnapshots.map((x) => x.revenue));
                 const height = maxRev > 0 ? (d.revenue / maxRev) * 120 : 0;
                 return (
-                  <div
-                    key={d.date}
-                    className="flex flex-1 flex-col items-center gap-1"
-                  >
-                    <span className="text-xs text-[#f0eee6]">
-                      {formatCurrency(d.revenue)}
-                    </span>
-                    <div
-                      className="w-full rounded-t"
-                      style={{ background: "var(--gold)", height: `${Math.max(height, 4)}px` }}
-                    />
+                  <div key={d.date} className="flex flex-1 flex-col items-center gap-1">
+                    <span className="text-xs text-[#f0eee6]">{formatCurrency(d.revenue)}</span>
+                    <div className="w-full rounded-t" style={{ background: "var(--gold)", height: `${Math.max(height, 4)}px` }} />
                     <span className="text-xs text-[#5a5850]">
-                      {new Date(d.date + "T12:00:00").toLocaleDateString(
-                        "en-US",
-                        { weekday: "short", month: "short", day: "numeric" }
-                      )}
+                      {new Date(d.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
                     </span>
-                    <span className="text-xs text-zinc-600">
-                      {d.fill_rate}% fill
-                    </span>
+                    <span className="text-xs text-zinc-600">{d.fill_rate}% fill</span>
                   </div>
                 );
               })}
@@ -806,46 +958,28 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Schedule ────────────────────────────────────── */}
+      {/* ── Schedule ─────────────────────────────────────── */}
       {subTab === "schedule" && (
-        <div className="space-y-4">
-          {/* Filters */}
+        <div className="space-y-4 animate-fade-in">
           <div className="flex flex-wrap gap-3">
             <div className="flex gap-1 rounded-lg bg-[#111113] p-1">
               {state.dailySnapshots.map((d) => (
-                <button
-                  key={d.date}
-                  onClick={() => setSelectedDate(d.date)}
-                  className={`tab-pill ${
-                    selectedDate === d.date ? "active" : ""
-                  }`}
-                >
-                  {new Date(d.date + "T12:00:00").toLocaleDateString(
-                    "en-US",
-                    { weekday: "short", month: "short", day: "numeric" }
-                  )}
+                <button key={d.date} onClick={() => setSelectedDate(d.date)}
+                  className={`tab-pill ${selectedDate === d.date ? "active" : ""}`}>
+                  {new Date(d.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
                 </button>
               ))}
             </div>
-            <select
-              value={selectedTheater ?? ""}
-              onChange={(e) =>
-                setSelectedTheater(
-                  e.target.value ? Number(e.target.value) : null
-                )
-              }
-              className="cinema-input rounded-lg px-3 py-2 text-sm"
-            >
+            <select value={selectedTheater ?? ""}
+              onChange={(e) => setSelectedTheater(e.target.value ? Number(e.target.value) : null)}
+              className="cinema-input rounded-lg px-3 py-2 text-sm">
               <option value="">All Theaters</option>
               {state.theaters.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
+                <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
           </div>
 
-          {/* Schedule grid */}
           <div className="overflow-hidden rounded-xl border border-[#2a2a30]">
             <table className="w-full text-left text-sm">
               <thead className="bg-[#111113] text-xs uppercase text-[#8a8880]">
@@ -862,88 +996,53 @@ export default function Dashboard() {
               </thead>
               <tbody className="divide-y divide-zinc-800">
                 {filteredShowtimes.map((s) => (
-                  <tr
-                    key={s.id}
-                    className="bg-[#0a0a0c] transition-colors hover:bg-[#19191d]"
-                  >
-                    <td className="px-4 py-3 font-mono text-[#f0eee6]">
-                      {s.start_time} — {s.end_time}
-                    </td>
+                  <tr key={s.id} className="bg-[#0a0a0c] transition-colors hover:bg-[#19191d]">
+                    <td className="px-4 py-3 font-mono text-[#f0eee6]">{s.start_time} — {s.end_time}</td>
                     <td className="px-4 py-3">
                       <div className="font-medium">{s.movie_name}</div>
                       <div className="text-xs text-[#5a5850]">{s.category}</div>
                     </td>
-                    <td className="px-4 py-3 text-[#8a8880]">
-                      {s.theater_name}
-                    </td>
-                    <td className="px-4 py-3 text-[#f0eee6]">
-                      ${s.ticket_price.toFixed(2)}
-                    </td>
+                    <td className="px-4 py-3 text-[#8a8880]">{s.theater_name}</td>
+                    <td className="px-4 py-3 text-[#f0eee6]">${s.ticket_price.toFixed(2)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <div className="h-1.5 w-16 overflow-hidden rounded-full bg-zinc-800">
-                          <div
-                            className={`h-full rounded-full ${s.fill_rate > 80 ? "bg-red-500" : s.fill_rate > 50 ? "bg-yellow-500" : "bg-green-500"}`}
-                            style={{ width: `${s.fill_rate}%` }}
-                          />
+                          <div className={`h-full rounded-full ${s.fill_rate > 80 ? "bg-red-500" : s.fill_rate > 50 ? "bg-yellow-500" : "bg-green-500"}`}
+                            style={{ width: `${s.fill_rate}%` }} />
                         </div>
-                        <span className="text-xs text-[#8a8880]">
-                          {s.seats_available}/{s.seat_count}
-                        </span>
+                        <span className="text-xs text-[#8a8880]">{s.seats_available}/{s.seat_count}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-[#f0eee6] text-xs">
-                      {formatCurrency(s.revenue)}
+                    <td className="px-4 py-3 text-[#f0eee6] text-xs">{formatCurrency(s.revenue)}</td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2 py-0.5 text-xs ${STATUS_BADGE[s.status] || STATUS_BADGE.scheduled}`}>{s.status}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs ${STATUS_BADGE[s.status] || STATUS_BADGE.scheduled}`}
-                      >
-                        {s.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <FillButton
-                        showtimeId={s.id}
-                        seatsAvailable={s.seats_available}
-                        onUpdate={fetchData}
-                      />
+                      <FillButton showtimeId={s.id} seatsAvailable={s.seats_available} onUpdate={fetchData} />
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <p className="text-xs text-[#5a5850]">
-            {filteredShowtimes.length} showtime
-            {filteredShowtimes.length !== 1 ? "s" : ""}
-          </p>
+          <p className="text-xs text-[#5a5850]">{filteredShowtimes.length} showtime{filteredShowtimes.length !== 1 ? "s" : ""}</p>
         </div>
       )}
 
-      {/* ── Alerts ──────────────────────────────────────── */}
+      {/* ── Alerts ───────────────────────────────────────── */}
       {subTab === "alerts" && (
-        <div className="space-y-3">
+        <div className="space-y-3 animate-fade-in">
           {state.alerts.length === 0 ? (
-            <div className="py-20 text-center text-zinc-500">
-              No alerts — everything is running smoothly.
-            </div>
+            <div className="py-20 text-center text-zinc-500">No alerts — everything is running smoothly.</div>
           ) : (
             state.alerts.map((a, i) => (
-              <div
-                key={i}
-                className={`rounded-lg border p-4 ${ALERT_STYLE[a.severity] || ALERT_STYLE.info}`}
-              >
+              <div key={i} className={`rounded-lg border p-4 ${ALERT_STYLE[a.severity] || ALERT_STYLE.info}`}>
                 <div className="flex items-start justify-between">
                   <div>
-                    <span className="mr-2 rounded bg-zinc-800 px-1.5 py-0.5 text-xs uppercase">
-                      {a.type.replace("_", " ")}
-                    </span>
+                    <span className="mr-2 rounded bg-zinc-800 px-1.5 py-0.5 text-xs uppercase">{a.type.replace("_", " ")}</span>
                     <span className="text-sm">{a.message}</span>
                   </div>
-                  <span className="ml-2 rounded-full bg-zinc-800 px-2 py-0.5 text-xs">
-                    {a.severity}
-                  </span>
+                  <span className="ml-2 rounded-full bg-zinc-800 px-2 py-0.5 text-xs">{a.severity}</span>
                 </div>
               </div>
             ))

@@ -1,18 +1,21 @@
 "use client";
 
-import { useChat } from "@ai-sdk/react";
 import { useState } from "react";
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
 import Dashboard from "@/components/Dashboard";
 import CuratorPanel from "@/components/CuratorPanel";
 import TimeControl from "@/components/TimeControl";
 import CustomersPanel from "@/components/CustomersPanel";
 
-type Tab = "chat" | "dashboard" | "curator" | "time" | "customers";
+type Tab = "chat" | "dashboard" | "curator" | "customers" | "time";
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("chat");
   const [input, setInput] = useState("");
-  const { messages, sendMessage, status } = useChat();
+  const { messages, sendMessage, status } = useChat({
+    transport: new DefaultChatTransport({ api: "/api/chat" }),
+  });
   const isLoading = status === "streaming" || status === "submitted";
 
   return (

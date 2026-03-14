@@ -2,119 +2,116 @@
 
 ## Vision
 
-An end-to-end AI agent system that autonomously operates a movie theater — from curating the film lineup to engaging customers, scheduling showtimes, running promotions, and handling the full ticket-buying experience. No humans needed. The agents collaborate, make decisions, and react to real-time conditions like a living business.
+An end-to-end AI agent system that autonomously operates a movie theater — from optimizing the lineup to engaging customers, scheduling showtimes, running promotions, and handling the full ticket-buying experience. The agents collaborate, make decisions, and react to real-time conditions like a living business, all visualized in a real-time dashboard.
 
 ---
 
 ## The Agents
 
-### 1. Film Curator Agent (`curator`)
-The creative mind. Decides what movies the theater should show.
+### 1. Optimizer Agent (`optimizer`)
+The strategic brain. Analyzes theater performance and optimizes operations. Absorbed the original Curator role.
 
-- **Generates movie listings** — titles, genres, synopses, ratings, runtime, poster art (via AI image gen or placeholder)
-- **Curates a rotating catalog** — balances genres (action, comedy, horror, family, indie)
-- **Responds to trends** — if a genre is selling well, it adds more of that type
-- **Retires underperforming films** — pulls movies that aren't filling seats
+- **Analyzes fill rates** across all theaters and flags underperformers
+- **Requests extra screenings** for high-demand movies
+- **Flags low-fill showtimes** for the Promoter to create deals
+- **Monitors genre distribution** and rebalances the catalog
+- **Model**: Claude Sonnet 4.6
+- **Frequency**: Every simulated day
 
 ### 2. Schedule Manager Agent (`scheduler`)
 The operations brain. Builds and optimizes the showtime calendar.
 
-- **Creates daily/weekly schedules** across multiple screens (Screen 1, 2, 3, etc.)
-- **Avoids conflicts** — no double-booking a screen
-- **Optimizes for demand** — popular movies get prime-time slots and more screens
-- **Handles gaps intelligently** — fills dead slots with shorter films or special screenings
-- **Adapts in real-time** — if a showing sells out, it can add an extra screening
+- **Adds showtimes** for movies in demand using available theater slots
+- **Cancels showtimes** with very low fills that won't sell
+- **Checks theater availability** to avoid conflicts
+- **Balances schedule** across theaters and time slots
+- **Model**: Claude Sonnet 4.6
+- **Frequency**: Every simulated day
 
 ### 3. Promotions Agent (`promoter`)
 The hustler. Drives ticket sales through discounts and deals.
 
-- **Creates targeted discounts** — "Matinee Monday: 30% off before noon", "Student Night", "Family 4-Pack"
-- **Generates promo codes** — unique, time-limited codes tied to specific movies or showings
-- **Runs flash sales** — detects low-attendance showings and drops prices to fill seats
-- **Bundles** — "Movie + Popcorn + Drink" combo deals
-- **Seasonal campaigns** — horror marathon in October, rom-coms for Valentine's week
+- **Creates targeted flash sales** for struggling showtimes (15-40% off)
+- **Generates promo codes** — unique codes tied to specific promotions
+- **Runs broader promotions** targeting categories or all movies
+- **Checks promo performance** to avoid overlap and waste
+- **Model**: Claude Sonnet 4.6
+- **Frequency**: Every simulated day
 
-### 4. Customer Agent (`customer-sim`) — STRETCH GOAL
-> **Status: Deferred.** Will be built if time permits. The other 4 agents are the priority.
+### 4. Manager Agent (`manager`)
+The customer service expert. Helps active customers find movies and book tickets.
 
-The audience. Simulates realistic customer behavior.
+- **Browses movies** matching customer preferences (genre, budget, time)
+- **Shows available showtimes** with pricing and seat availability
+- **Books tickets** with proper seat decrement and booking records
+- **Handles the full conversation** from browsing to confirmed booking
+- **Model**: Claude Haiku 4.5
+- **Frequency**: Per active customer interaction
 
-- **Browses the catalog** — looks at what's playing, checks times
-- **Has preferences** — some customers love action, others want family films
-- **Responds to promotions** — more likely to buy with a discount
-- **Books tickets** — selects movie, showtime, seats, applies promo codes
-- **Leaves reviews** — post-movie feedback that feeds back into the system
-- **Asks questions** — "Is this movie kid-friendly?", "Do you have wheelchair seating?"
+### 5. Customer Agents (`customer-active`, `customer-passive`)
+The audience. Simulated customers with distinct personalities.
 
-### 5. Theater Manager Agent (`manager`)
-The orchestrator. Oversees everything and makes high-level decisions.
+**Active Customers** (LLM-driven):
+- Have preferences (favorite genres, budget sensitivity, group size, time preference)
+- Talk to the Manager Agent to find and book movies
+- Make autonomous decisions to book or leave
+- **Model**: Claude Haiku 4.5
 
-- **Monitors KPIs** — ticket sales, revenue, seat fill rate, customer satisfaction
-- **Coordinates agents** — tells the curator to add movies, tells the promoter to run a sale
-- **Generates reports** — daily/weekly dashboards of theater performance
-- **Handles escalations** — when the customer sim has an issue no other agent can solve
-- **Makes strategic calls** — "We need more family content" or "Let's do a midnight premiere"
+**Passive Customers** (Deterministic):
+- Receive promotions and decide whether to accept based on preferences
+- Rule-based decision: genre match + budget sensitivity + spontaneity + discount value
+- No LLM call — cheap and fast
 
 ---
 
-## The Simulation Loop
+## The Simulation Model
+
+### Day-Based Architecture
+
+Each simulation "day" is a complete cycle. There are no artificial timers — the simulation runs at the speed of the LLM API calls.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    THEATER MANAGER                       │
-│              (orchestrates everything)                   │
-└──────────┬──────────┬──────────┬──────────┬─────────────┘
-           │          │          │          │
-     ┌─────▼──┐ ┌────▼───┐ ┌───▼────┐ ┌───▼──────────┐
-     │CURATOR │ │SCHEDULE│ │PROMOTER│ │CUSTOMER SIMS │
-     │        │ │MANAGER │ │        │ │ (many)       │
-     └───┬────┘ └───┬────┘ └───┬────┘ └───┬──────────┘
-         │          │          │          │
-         └──────────┴──────────┴──────────┘
-                        │
-                  ┌─────▼─────┐
-                  │  THEATER  │
-                  │   STATE   │
-                  │ (shared)  │
-                  └───────────┘
+Day N:
+  ┌─────────────────────────────────────────────────┐
+  │  Phase 1: Strategic Agents (Sequential)          │
+  │    Optimizer → Scheduler → Promoter              │
+  ├─────────────────────────────────────────────────┤
+  │  Phase 2: Customer Waves (3 per day)             │
+  │    Morning (10:00):  3 active + 1 passive        │
+  │    Afternoon (14:00): 5 active + 2 passive       │
+  │    Evening (18:00):  7 active + 3 passive        │
+  ├─────────────────────────────────────────────────┤
+  │  Phase 3: End of Day                             │
+  │    KPI snapshot → Advance clock → Day N+1        │
+  └─────────────────────────────────────────────────┘
 ```
 
-### Simulation Flow
+### Why Day-Based?
 
-1. **Initialization** — Manager boots the theater. Curator generates initial movie catalog. Scheduler builds the first week's showtimes.
-2. **Tick Loop** (each tick = simulated time block, e.g., 1 hour)
-   - Customer agents browse, book, or leave reviews
-   - Promoter checks fill rates and creates/adjusts deals
-   - Scheduler adapts if screenings sell out or flop
-   - Manager reviews KPIs and issues directives
-3. **Events** — Random events spice things up: "A blockbuster just dropped!", "Projector broke in Screen 2", "Holiday weekend incoming"
-4. **End State** — After N ticks, the manager generates a final report card
+- **Natural pacing**: Each day completes fully before the next begins
+- **No artificial delays**: Speed is determined by how fast conversations happen
+- **Visually exciting**: Events stream in rapidly as each phase completes
+- **Deterministic completion**: Every day has a clear start and end
+
+### Customer Spawner
+
+25 predefined personality templates (data, not LLM-generated):
+- Name, favorite genres, budget sensitivity (low/medium/high), group size (1-6), time preference (matinee/evening/any), spontaneity (0-1)
+- Per wave: customers are randomly selected, ensuring no duplicates within a day
 
 ---
 
 ## Shared Theater State
 
-Central data store all agents read/write. This is the source of truth.
+Central SQLite database — source of truth for all agents.
 
-```
-theater_state = {
-  movies: [...],           // current catalog
-  screens: [1, 2, 3, 4],  // available screens
-  schedule: {...},         // showtime calendar
-  promotions: [...],       // active deals/codes
-  bookings: [...],         // all ticket purchases
-  reviews: [...],          // customer feedback
-  revenue: 0,             // running total
-  events: [...],          // event log / audit trail
-  kpis: {                 // dashboard metrics
-    total_tickets_sold: 0,
-    average_fill_rate: 0,
-    total_revenue: 0,
-    average_rating: 0,
-    promo_redemptions: 0
-  }
-}
-```
+**Tables**: movies, theaters, showtimes, promotions, promo_codes, bookings, simulation_events
+
+**State Controller** (`TheaterStateController`):
+- KPIs: revenue, tickets sold, fill rates, promo stats
+- Theater summaries: per-theater capacity and fills
+- Genre trends: performance by category
+- Alerts: sold out, low fill, high demand, expiring promos
 
 ---
 
@@ -123,77 +120,124 @@ theater_state = {
 | Layer | Choice | Why |
 |-------|--------|-----|
 | **Runtime** | Next.js 16 + TypeScript | Full-stack React framework |
-| **AI Backbone** | Claude API via Vercel AI SDK (`@ai-sdk/anthropic`) | Powers each agent's reasoning and decisions |
-| **Agent Framework** | Vercel AI SDK tool-use with `streamText` | Each agent = a Claude tool-use loop |
+| **AI** | Claude via Vercel AI SDK v6 | Powers agent reasoning and tool use |
+| **Models** | Sonnet 4.6 (strategic), Haiku 4.5 (customers) | Cost-efficient model mix |
 | **Data Store** | SQLite via `better-sqlite3` | Lightweight, file-based, no server needed |
-| **Frontend** | React + Tailwind CSS | Chat UI + dashboard |
-| **Styling** | Tailwind CSS v4 | Utility-first, dark theme |
+| **Frontend** | React 19 + Tailwind CSS v4 | Chat UI + real-time simulation dashboard |
+| **Streaming** | Server-Sent Events (SSE) | Real-time event delivery to dashboard |
+| **Concurrency** | Async mutex + Promise.allSettled | Safe writes + concurrent customer batches |
+
+---
+
+## Frontend
+
+### Tab Structure
+- **Chat Tab**: Manual customer chatbot (independent of simulation)
+- **Dashboard Tab**: Simulation + analytics with 6 subtabs
+
+### Dashboard Subtabs
+1. **Simulation**: Controls (play/stop/reset) + KPI bar + Theater grid (15 cards) + recent activity
+2. **Activity**: Full scrolling log of agent actions with color-coded badges
+3. **Conversations**: Expandable customer-manager dialogues with outcomes
+4. **Analytics**: Revenue, genre performance, daily charts, promo stats
+5. **Schedule**: Filterable showtime table with fill buttons
+6. **Alerts**: Color-coded alerts (sold out, low fill, high demand, promo expiring)
+
+### Design System
+- Luxury cinema gold theme (#d4a853 accent)
+- Dark background (#08080a)
+- Playfair Display + DM Sans fonts
+- CSS custom properties for consistent theming
+- Agent-colored badges: Optimizer=purple, Scheduler=blue, Promoter=gold, Manager=green, Customer=zinc
 
 ---
 
 ## Demo Flow (Hackathon Presentation)
 
-1. **Boot the theater** — show the empty state
-2. **Curator generates movies** — watch the catalog populate with creative AI-generated films
-3. **Scheduler builds the week** — showtimes appear on the board
-4. **Customers start arriving** — simulated customers browse and book
-5. **Promoter reacts** — low fill rate triggers a flash sale, watch bookings spike
-6. **Chaos event** — "Screen 2 projector is down!" — watch agents adapt
-7. **Final dashboard** — revenue, fill rates, top movies, best promos
+1. **Start simulation** — click Play, watch Day 1 begin
+2. **Strategic phase** — Optimizer analyzes, Scheduler adjusts, Promoter creates deals
+3. **Morning wave** — watch 3 customers arrive, browse, and book (or leave)
+4. **Afternoon/Evening waves** — traffic builds, fill rates climb, promos get redeemed
+5. **Day ends** — KPI snapshot, theater grid updates
+6. **Day 2+ begins** — agents adapt to new data, promotions evolve
+7. **Show conversations** — click into customer dialogues to see natural language booking
+8. **Show analytics** — revenue charts, genre performance, fill rate trends
+
+---
+
+## Model Cost Budget (10-min demo, ~3-4 simulated days)
+
+| Agent | Model | Calls/Day | Total (4 days) | Est. Cost |
+|-------|-------|-----------|----------------|-----------|
+| Optimizer | Sonnet 4.6 | 1 | 4 | ~$0.12 |
+| Scheduler | Sonnet 4.6 | 1 | 4 | ~$0.12 |
+| Promoter | Sonnet 4.6 | 1 | 4 | ~$0.12 |
+| Manager | Haiku 4.5 | ~15/day | 60 | ~$0.30 |
+| Active Customers | Haiku 4.5 | ~15/day | 60 | ~$0.30 |
+| Passive Customers | None | ~6/day | 24 | $0.00 |
+| **Total** | | | | **~$1.00** |
 
 ---
 
 ## Success Criteria
 
-- [ ] Core 4 agents are functional and make autonomous decisions (Curator, Scheduler, Promoter, Manager)
-- [ ] Agents communicate and react to each other's actions
-- [ ] Full ticket-booking workflow works end-to-end
-- [ ] Promotions actually affect simulated customer behavior
-- [ ] Live dashboard shows the theater state updating in real-time
-- [ ] At least one "chaos event" is handled gracefully
-- [ ] The demo tells a compelling story in under 5 minutes
+- [x] Core agents functional and autonomous (Optimizer, Scheduler, Promoter, Manager)
+- [x] Full ticket-booking workflow works end-to-end
+- [x] Promotions affect customer behavior
+- [x] Live dashboard shows theater state updating in real-time
+- [x] Day-by-day simulation with customer waves
+- [x] Manual chat tab works independently
+- [ ] Demo tells a compelling story in under 5 minutes
 
 ---
 
-## Stretch Goals
-
-- **Conversational booking** — customer agent has a natural language chat to book tickets (Podium-style messaging)
-- **SMS notifications** — fake SMS flow for booking confirmations and promo alerts
-- **Multi-day simulation** — watch the theater evolve over a simulated week
-- **Competing theaters** — two AI theaters compete for the same customer pool
-- **Voice agent** — phone-based booking experience
-
----
-
-## File Structure (Planned)
+## File Structure
 
 ```
 team_23/
-├── SPECIFICATION.md
-├── README.md
-├── requirements.txt
-├── main.py                  # Entry point — boots the simulation
-├── config.py                # Theater config (screens, tick speed, etc.)
-├── theater_state.py         # Shared state dataclass
-├── agents/
-│   ├── __init__.py
-│   ├── base_agent.py        # Base class for all agents
-│   ├── curator.py           # Film Curator Agent
-│   ├── scheduler.py         # Schedule Manager Agent
-│   ├── promoter.py          # Promotions Agent
-│   ├── customer.py          # Customer Simulator Agent
-│   └── manager.py           # Theater Manager Agent
-├── models/
-│   ├── __init__.py
-│   ├── movie.py             # Movie dataclass
-│   ├── showtime.py          # Showtime dataclass
-│   ├── booking.py           # Booking dataclass
-│   ├── promotion.py         # Promotion dataclass
-│   └── review.py            # Review dataclass
-├── ui/
-│   ├── __init__.py
-│   └── dashboard.py         # Streamlit or Rich terminal dashboard
-└── utils/
-    ├── __init__.py
-    └── logger.py            # Event logging
+├── CLAUDE.md                     # Project instructions for Claude Code
+├── SPECIFICATION.md              # This file
+├── ARCHITECTURE.md               # Full architecture diagrams (Mermaid)
+├── movies_schema.sql             # Movies table schema
+├── theater_schema.sql            # Theaters + showtimes schema
+├── bookings_schema.sql           # Bookings + promotions schema
+├── events_schema.sql             # Simulation events schema
+├── movies.db                     # SQLite database
+├── src/
+│   ├── app/
+│   │   ├── page.tsx              # Main page (Chat + Dashboard tabs)
+│   │   ├── layout.tsx            # Root layout
+│   │   ├── globals.css           # Theme + animations
+│   │   └── api/
+│   │       ├── chat/route.ts     # Customer chatbot
+│   │       ├── clock/route.ts    # Clock control
+│   │       ├── theater-state/    # State query API
+│   │       └── simulation/
+│   │           ├── stream/       # SSE event stream
+│   │           └── control/      # Start/stop/reset
+│   ├── lib/
+│   │   ├── db.ts                 # SQLite singleton
+│   │   ├── simulation-clock.ts   # Time control
+│   │   ├── simulation-engine.ts  # Day-by-day orchestrator
+│   │   ├── theater-state.ts      # KPI controller
+│   │   ├── event-store.ts        # Event persistence
+│   │   ├── write-queue.ts        # Async mutex
+│   │   ├── promoter-tools.ts     # Shared promo functions
+│   │   └── agents/
+│   │       ├── types.ts          # Shared types
+│   │       ├── customer-spawner.ts
+│   │       ├── customer-active.ts
+│   │       ├── customer-passive.ts
+│   │       ├── manager-agent.ts
+│   │       ├── optimizer.ts
+│   │       ├── scheduler.ts
+│   │       └── promoter-agent.ts
+│   └── components/
+│       ├── Dashboard.tsx         # Main dashboard + SSE listener
+│       ├── SimulationControls.tsx
+│       ├── KPIBar.tsx
+│       ├── TheaterGrid.tsx
+│       ├── TheaterCard.tsx
+│       ├── ActivityFeed.tsx
+│       └── ConversationView.tsx
 ```
