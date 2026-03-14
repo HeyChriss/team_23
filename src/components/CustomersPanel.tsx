@@ -243,6 +243,32 @@ export default function CustomersPanel() {
     return () => clearInterval(interval);
   }, [fetchCustomers]);
 
+  // ── Listen for simulation engine customer events ─────────────────────────
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { customerName, status } = (e as CustomEvent).detail as {
+        customerName: string;
+        status: "active" | "booked" | "left";
+      };
+      if (!customerName) return;
+
+      // Find the bubble by customer name
+      const bubble = bubblesRef.current.find(
+        (b) => b.customer.name === customerName && b.state === "floating"
+      );
+      if (!bubble) return;
+
+      if (status === "booked") {
+        exitBubble(bubble.customer.id, true);
+      } else if (status === "left") {
+        exitBubble(bubble.customer.id, false);
+      }
+      // "active" status — bubble stays but we could add a glow effect later
+    };
+    window.addEventListener("sim:customer-status", handler);
+    return () => window.removeEventListener("sim:customer-status", handler);
+  }, [exitBubble]);
+
   const filteredBubbles = bubbles.filter(
     (b) => filter === "all" || b.customer.customer_type === filter
   );

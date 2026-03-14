@@ -199,6 +199,7 @@ class SimulationEngine {
             event_type: "customer_arrived",
             agent: "customer",
             summary: `${c.name} arrived (${c.favoriteGenres.join("/")} fan, group of ${c.groupSize})`,
+            data: JSON.stringify({ customer: c.name, customerType: "active", genres: c.favoriteGenres, groupSize: c.groupSize }),
           },
         });
       }
@@ -225,6 +226,19 @@ class SimulationEngine {
       passiveCustomers.forEach((c) => usedNames.add(c.name));
       summary.totalCustomers += passiveCustomers.length;
 
+      for (const c of passiveCustomers) {
+        emit({
+          type: "event",
+          data: {
+            sim_time: waveTime,
+            event_type: "customer_arrived",
+            agent: "customer",
+            summary: `${c.name} arrived (passive, ${c.favoriteGenres.join("/")} fan)`,
+            data: JSON.stringify({ customer: c.name, customerType: "passive" }),
+          },
+        });
+      }
+
       const passiveResults = await runPassiveCustomerBatch(passiveCustomers, waveTime);
       for (const pr of passiveResults) {
         if (pr.accepted) {
@@ -237,12 +251,22 @@ class SimulationEngine {
               event_type: "promotion_accepted",
               agent: "customer",
               summary: `${pr.customerName} accepted promo "${pr.promoName}"`,
-              data: pr.bookingDetails ? JSON.stringify(pr.bookingDetails) : undefined,
+              data: JSON.stringify({ customer: pr.customerName, ...(pr.bookingDetails || {}) }),
             },
           });
         } else {
           waveLeft++;
           summary.totalLeft++;
+          emit({
+            type: "event",
+            data: {
+              sim_time: waveTime,
+              event_type: "promotion_rejected",
+              agent: "customer",
+              summary: `${pr.customerName} declined${pr.promoName ? ` "${pr.promoName}"` : " — no matching promo"}`,
+              data: JSON.stringify({ customer: pr.customerName }),
+            },
+          });
         }
       }
 

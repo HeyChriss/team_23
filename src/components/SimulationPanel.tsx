@@ -6,6 +6,7 @@ import KPIBar from "./KPIBar";
 import TheaterGrid from "./TheaterGrid";
 import ActivityFeed from "./ActivityFeed";
 import ConversationView from "./ConversationView";
+import CustomerPoolLive from "./CustomerPoolLive";
 import type { SimulationEvent, ConversationEntry } from "@/lib/agents/types";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -176,11 +177,53 @@ export default function SimulationPanel() {
     });
 
     es.addEventListener("event", (e) => {
-      setSimEvents((prev) => [...prev.slice(-80), JSON.parse(e.data)]);
+      const evData = JSON.parse(e.data);
+      setSimEvents((prev) => [...prev.slice(-80), evData]);
+
+      // Broadcast customer status to other components
+      if (evData.event_type === "customer_arrived") {
+        try {
+          const parsed = evData.data ? JSON.parse(evData.data) : {};
+          if (parsed.customer) {
+            window.dispatchEvent(new CustomEvent("sim:customer-status", {
+              detail: { customerName: parsed.customer, status: "active" },
+            }));
+          }
+        } catch { /* ignore parse errors */ }
+      } else if (evData.event_type === "promotion_accepted" || evData.event_type === "customer_booked") {
+        try {
+          const parsed = evData.data ? JSON.parse(evData.data) : {};
+          if (parsed.customer) {
+            window.dispatchEvent(new CustomEvent("sim:customer-status", {
+              detail: { customerName: parsed.customer, status: "booked" },
+            }));
+          }
+        } catch { /* ignore */ }
+      } else if (evData.event_type === "promotion_rejected" || evData.event_type === "customer_left") {
+        try {
+          const parsed = evData.data ? JSON.parse(evData.data) : {};
+          if (parsed.customer) {
+            window.dispatchEvent(new CustomEvent("sim:customer-status", {
+              detail: { customerName: parsed.customer, status: "left" },
+            }));
+          }
+        } catch { /* ignore */ }
+      }
     });
 
     es.addEventListener("conversation", (e) => {
-      setSimConversations((prev) => [...prev.slice(-50), JSON.parse(e.data)]);
+      const conv = JSON.parse(e.data);
+      setSimConversations((prev) => [...prev.slice(-50), conv]);
+
+      // Broadcast conversation outcome
+      if (conv.customerName) {
+        window.dispatchEvent(new CustomEvent("sim:customer-status", {
+          detail: {
+            customerName: conv.customerName,
+            status: conv.outcome === "booked" ? "booked" : "left",
+          },
+        }));
+      }
     });
 
     es.addEventListener("kpi", (e) => {
@@ -377,6 +420,9 @@ export default function SimulationPanel() {
             totalBookings={displayKpis.total_bookings}
             dayNumber={dayNumber}
           />
+
+          {/* Live customer pool */}
+          <CustomerPoolLive />
 
           {/* Theater grid */}
           {simTheaters.length > 0 && (

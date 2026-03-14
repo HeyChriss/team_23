@@ -8,7 +8,7 @@ import CustomersPanel from "@/components/CustomersPanel";
 type Tab = "dashboard" | "simulation" | "customers";
 
 export default function Home() {
-  const [tab, setTab] = useState<Tab>("dashboard");
+  const [tab, setTab] = useState<Tab>("simulation");
 
   return (
     <div className="flex min-h-screen flex-col" style={{ background: "#08080a" }}>
