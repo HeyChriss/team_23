@@ -34,7 +34,9 @@ The hustler. Drives ticket sales through discounts and deals.
 - **Bundles** — "Movie + Popcorn + Drink" combo deals
 - **Seasonal campaigns** — horror marathon in October, rom-coms for Valentine's week
 
-### 4. Customer Agent (`customer-sim`)
+### 4. Customer Agent (`customer-sim`) — STRETCH GOAL
+> **Status: Deferred.** Will be built if time permits. The other 4 agents are the priority.
+
 The audience. Simulates realistic customer behavior.
 
 - **Browses the catalog** — looks at what's playing, checks times
@@ -120,12 +122,12 @@ theater_state = {
 
 | Layer | Choice | Why |
 |-------|--------|-----|
-| **Runtime** | Python 3.12+ | Fast prototyping, great AI library support |
-| **AI Backbone** | Claude API (Anthropic) | Powers each agent's reasoning and decisions |
-| **Agent Framework** | Claude Agent SDK or lightweight custom | Each agent = a Claude tool-use loop |
-| **Data Store** | In-memory (dict/dataclass) | No DB overhead for a hackathon — fast and simple |
-| **Frontend** | Streamlit or Rich (terminal UI) | Live dashboard showing the theater in action |
-| **Image Gen** | Placeholder URLs or simple SVG | Movie posters — keep it lightweight |
+| **Runtime** | Next.js 16 + TypeScript | Full-stack React framework |
+| **AI Backbone** | Claude API via Vercel AI SDK (`@ai-sdk/anthropic`) | Powers each agent's reasoning and decisions |
+| **Agent Framework** | Vercel AI SDK tool-use with `streamText` | Each agent = a Claude tool-use loop |
+| **Data Store** | SQLite via `better-sqlite3` | Lightweight, file-based, no server needed |
+| **Frontend** | React + Tailwind CSS | Chat UI + dashboard |
+| **Styling** | Tailwind CSS v4 | Utility-first, dark theme |
 
 ---
 
@@ -143,7 +145,7 @@ theater_state = {
 
 ## Success Criteria
 
-- [ ] All 5 agents are functional and make autonomous decisions
+- [ ] Core 4 agents are functional and make autonomous decisions (Curator, Scheduler, Promoter, Manager)
 - [ ] Agents communicate and react to each other's actions
 - [ ] Full ticket-booking workflow works end-to-end
 - [ ] Promotions actually affect simulated customer behavior
