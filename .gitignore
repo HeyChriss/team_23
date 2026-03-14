@@ -33,7 +33,7 @@ yarn-error.log*
 # env files (.env committed with placeholders for hackathon, .env.local has real keys)
 .env.local
 .env.production
-
+.env
 # vercel
 .vercel
 
