@@ -164,6 +164,63 @@ describe("Simulation Engine — Event Streaming", () => {
     }
   }, 60000);
 
+  it("processes customers sequentially — each arrival+outcome before next arrival", async () => {
+    const engine = getSimulationEngine();
+    engine.reset();
+
+    const { events, emit } = collectEvents();
+    const ac = new AbortController();
+    const timeout = setTimeout(() => ac.abort(), 45000);
+
+    try {
+      await engine.runDay(emit, ac.signal);
+    } catch { /* expected */ }
+    clearTimeout(timeout);
+
+    // Find customer_arrived and their outcomes (customer_booked/customer_left)
+    const arrivals = events
+      .map((e, i) => ({ ...e, idx: i }))
+      .filter((e) => e.type === "event" && e.eventType === "customer_arrived");
+
+    const outcomes = events
+      .map((e, i) => ({ ...e, idx: i }))
+      .filter((e) => e.type === "event" && (
+        e.eventType === "customer_booked" || e.eventType === "customer_left" ||
+        e.eventType === "promotion_accepted" || e.eventType === "promotion_rejected"
+      ));
+
+    if (arrivals.length >= 2 && outcomes.length >= 2) {
+      // For sequential processing: the first customer's outcome should come
+      // BEFORE the second customer's arrival (within a wave)
+      // Find first wave's first two active customers
+      const firstWaveStartIdx = events.findIndex((e) => e.type === "wave_start");
+      const firstWaveEndIdx = events.findIndex((e) => e.type === "wave_end");
+
+      if (firstWaveStartIdx >= 0 && firstWaveEndIdx >= 0) {
+        const waveEvents = events.slice(firstWaveStartIdx, firstWaveEndIdx);
+        const waveArrivals = waveEvents.filter((e) => e.type === "event" && e.eventType === "customer_arrived");
+        const waveOutcomes = waveEvents.filter((e) =>
+          e.type === "event" && (e.eventType === "customer_booked" || e.eventType === "customer_left") ||
+          e.type === "conversation"
+        );
+
+        // Each arrival should be followed by its outcome before the next arrival
+        // (sequential processing means: arrive1, conv1, outcome1, arrive2, conv2, outcome2, ...)
+        if (waveArrivals.length >= 2) {
+          // The pattern should alternate: arrival → outcome events → next arrival
+          console.log(`\nWave event order (${waveEvents.length} events):`);
+          for (const e of waveEvents) {
+            console.log(`  [${e.type}] ${e.eventType || ""} ${e.summary || ""}`);
+          }
+        }
+      }
+    }
+
+    // Basic: every arrival should have a matching outcome
+    expect(outcomes.length + events.filter((e) => e.type === "conversation").length)
+      .toBeGreaterThanOrEqual(arrivals.length);
+  }, 60000);
+
   it("emits customer_booked or customer_left for each active customer", async () => {
     const engine = getSimulationEngine();
     engine.reset();

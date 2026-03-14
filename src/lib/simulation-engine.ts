@@ -200,7 +200,16 @@ class SimulationEngine {
         .filter((c) => !usedNames.has(c.name));
       activeCustomers.forEach((c) => usedNames.add(c.name));
 
+      summary.totalCustomers += activeCustomers.length;
+
+      // Run customers ONE AT A TIME: arrive → conversation → outcome → next customer
+      let waveBooked = 0;
+      let waveLeft = 0;
+
       for (const c of activeCustomers) {
+        if (signal.aborted) return;
+
+        // Announce arrival right before processing this customer
         emit({
           type: "event",
           data: {
@@ -212,63 +221,46 @@ class SimulationEngine {
           },
         });
         await tick();
-      }
 
-      summary.totalCustomers += activeCustomers.length;
-
-      // Run conversations in parallel but emit each result as it completes (streaming)
-      let waveBooked = 0;
-      let waveLeft = 0;
-
-      const activeResults = await Promise.allSettled(
-        activeCustomers.map(async (c) => {
-          try {
-            const conv = await runActiveCustomer(c, waveTime, (update) => {
-              emit({ type: "conversation_update", data: update });
+        try {
+          const conv = await runActiveCustomer(c, waveTime, (update) => {
+            emit({ type: "conversation_update", data: update });
+          });
+          emit({ type: "conversation", data: conv });
+          if (conv.outcome === "booked") {
+            waveBooked++;
+            summary.totalBookings++;
+            emit({
+              type: "event",
+              data: {
+                sim_time: waveTime,
+                event_type: "customer_booked",
+                agent: "customer",
+                summary: `${c.name} booked tickets!`,
+                data: JSON.stringify({ customer: c.name, ...(conv.bookingDetails || {}) }),
+              },
             });
-            // Emit conversation + outcome event immediately — don't wait for others
-            emit({ type: "conversation", data: conv });
-            if (conv.outcome === "booked") {
-              waveBooked++;
-              summary.totalBookings++;
-              emit({
-                type: "event",
-                data: {
-                  sim_time: waveTime,
-                  event_type: "customer_booked",
-                  agent: "customer",
-                  summary: `${c.name} booked tickets!`,
-                  data: JSON.stringify({ customer: c.name, ...(conv.bookingDetails || {}) }),
-                },
-              });
-            } else {
-              waveLeft++;
-              summary.totalLeft++;
-              emit({
-                type: "event",
-                data: {
-                  sim_time: waveTime,
-                  event_type: "customer_left",
-                  agent: "customer",
-                  summary: `${c.name} left without buying`,
-                  data: JSON.stringify({ customer: c.name }),
-                },
-              });
-            }
-            // Yield so the stream flushes this event to the client
-            await tick();
-            return conv;
-          } catch {
+          } else {
             waveLeft++;
             summary.totalLeft++;
-            return {
-              customerName: c.name, personality: c,
-              messages: [{ role: "manager" as const, content: "[Error]" }],
-              outcome: "left" as const,
-            };
+            emit({
+              type: "event",
+              data: {
+                sim_time: waveTime,
+                event_type: "customer_left",
+                agent: "customer",
+                summary: `${c.name} left without buying`,
+                data: JSON.stringify({ customer: c.name }),
+              },
+            });
           }
-        })
-      );
+          await tick();
+        } catch {
+          waveLeft++;
+          summary.totalLeft++;
+          await tick();
+        }
+      }
 
       // Passive customers (respond to promotions)
       const passiveCustomers = spawnPassiveCustomers(wave.passiveCustomers)
@@ -276,7 +268,10 @@ class SimulationEngine {
       passiveCustomers.forEach((c) => usedNames.add(c.name));
       summary.totalCustomers += passiveCustomers.length;
 
+      // Run passive customers one at a time: arrive → decide → next
       for (const c of passiveCustomers) {
+        if (signal.aborted) return;
+
         emit({
           type: "event",
           data: {
@@ -288,42 +283,37 @@ class SimulationEngine {
           },
         });
         await tick();
-      }
 
-      // Run passive customers in parallel, emit each result individually
-      await Promise.allSettled(
-        passiveCustomers.map(async (c) => {
-          const pr = await runPassiveCustomer(c, waveTime);
-          if (pr.accepted) {
-            waveBooked++;
-            summary.totalBookings++;
-            emit({
-              type: "event",
-              data: {
-                sim_time: waveTime,
-                event_type: "promotion_accepted",
-                agent: "customer",
-                summary: `${pr.customerName} accepted promo "${pr.promoName}"`,
-                data: JSON.stringify({ customer: pr.customerName, ...(pr.bookingDetails || {}) }),
-              },
-            });
-          } else {
-            waveLeft++;
-            summary.totalLeft++;
-            emit({
-              type: "event",
-              data: {
-                sim_time: waveTime,
-                event_type: "promotion_rejected",
-                agent: "customer",
-                summary: `${pr.customerName} declined${pr.promoName ? ` "${pr.promoName}"` : " — no matching promo"}`,
-                data: JSON.stringify({ customer: pr.customerName }),
-              },
-            });
-          }
-          await tick();
-        })
-      );
+        const pr = await runPassiveCustomer(c, waveTime);
+        if (pr.accepted) {
+          waveBooked++;
+          summary.totalBookings++;
+          emit({
+            type: "event",
+            data: {
+              sim_time: waveTime,
+              event_type: "promotion_accepted",
+              agent: "customer",
+              summary: `${pr.customerName} accepted promo "${pr.promoName}"`,
+              data: JSON.stringify({ customer: pr.customerName, ...(pr.bookingDetails || {}) }),
+            },
+          });
+        } else {
+          waveLeft++;
+          summary.totalLeft++;
+          emit({
+            type: "event",
+            data: {
+              sim_time: waveTime,
+              event_type: "promotion_rejected",
+              agent: "customer",
+              summary: `${pr.customerName} declined${pr.promoName ? ` "${pr.promoName}"` : " — no matching promo"}`,
+              data: JSON.stringify({ customer: pr.customerName }),
+            },
+          });
+        }
+        await tick();
+      }
 
       // Emit KPIs after each wave
       const waveKpis = controller.getKPIs();
