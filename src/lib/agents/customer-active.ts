@@ -3,14 +3,15 @@
  * Each customer talks to the Manager Agent to find and book tickets.
  */
 
-import type { CustomerPersonality, ConversationEntry } from "./types";
+import type { CustomerPersonality, ConversationEntry, ConversationUpdate } from "./types";
 import { runManagerConversation } from "./manager-agent";
 
 export async function runActiveCustomer(
   customer: CustomerPersonality,
-  simTime: string
+  simTime: string,
+  onProgress?: (update: ConversationUpdate) => void
 ): Promise<ConversationEntry> {
-  return runManagerConversation(customer, simTime);
+  return runManagerConversation(customer, simTime, onProgress);
 }
 
 export async function runActiveCustomerBatch(

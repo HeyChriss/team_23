@@ -26,7 +26,7 @@ export async function runPromoter(simTime: string): Promise<AgentResult> {
 
   try {
     await generateText({
-      model: anthropic("claude-opus-4-6"),
+      model: anthropic("claude-sonnet-4-6"),
       stopWhen: stepCountIs(3),
       system: `You are the Promotions Agent for StarLight Cinemas. You create deals to fill empty seats.
 

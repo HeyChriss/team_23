@@ -232,6 +232,11 @@ export default function SimulationPanel() {
       }
     });
 
+    es.addEventListener("conversation_update", (e) => {
+      const update = JSON.parse(e.data);
+      window.dispatchEvent(new CustomEvent("sim:conversation-update", { detail: update }));
+    });
+
     es.addEventListener("kpi", (e) => {
       setSimKpis(JSON.parse(e.data) as KPIs);
     });

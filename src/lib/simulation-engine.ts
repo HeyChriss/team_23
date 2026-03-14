@@ -21,7 +21,7 @@ import { runPassiveCustomer } from "./agents/customer-passive";
 import { runOptimizer } from "./agents/optimizer";
 import { runScheduler } from "./agents/scheduler";
 import { runPromoter } from "./agents/promoter-agent";
-import type { SimulationEvent, ConversationEntry } from "./agents/types";
+import type { SimulationEvent, ConversationEntry, ConversationUpdate } from "./agents/types";
 
 // ── Wave config ─────────────────────────────────────────────────────────────
 
@@ -47,6 +47,7 @@ export type SSEEvent =
   | { type: "wave_end"; data: { wave: string; booked: number; left: number } }
   | { type: "event"; data: SimulationEvent }
   | { type: "conversation"; data: ConversationEntry }
+  | { type: "conversation_update"; data: ConversationUpdate }
   | { type: "state"; data: { kpis: Record<string, unknown>; theaters: Record<string, unknown>[] } }
   | { type: "kpi"; data: Record<string, unknown> }
   | { type: "error"; data: { message: string } }
@@ -222,7 +223,9 @@ class SimulationEngine {
       const activeResults = await Promise.allSettled(
         activeCustomers.map(async (c) => {
           try {
-            const conv = await runActiveCustomer(c, waveTime);
+            const conv = await runActiveCustomer(c, waveTime, (update) => {
+              emit({ type: "conversation_update", data: update });
+            });
             // Emit conversation + outcome event immediately — don't wait for others
             emit({ type: "conversation", data: conv });
             if (conv.outcome === "booked") {

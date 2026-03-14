@@ -14,14 +14,18 @@ Always use context7 for the most up to date docs on the chosen tech stack.
 - Zod v4 for tool input validation
 
 ## Architecture
-- **Simulation Engine** (`src/lib/simulation-engine.ts`): Day-by-day loop orchestrating all agents. No timers — runs at LLM speed.
-- **Agents** (`src/lib/agents/`): Optimizer, Scheduler, Promoter (Sonnet 4.6), Manager (Haiku 4.5), Customer spawner
-- **Curator Agent** (`/api/agents/curator`): Film curator — add/retire movies, getGenreDistribution, getMoviePerformance, trendAnalysis. Has its own frontend tab.
-- **SSE streaming** (`/api/simulation/stream`): Real-time events to dashboard
+- **Simulation Engine** (`src/lib/simulation-engine.ts`): Day-by-day loop orchestrating all agents. No timers — runs at LLM speed. Streams individual results as each conversation completes (not batched).
+- **Agents** (`src/lib/agents/`): Optimizer, Scheduler, Promoter (Sonnet 4.6), Manager (Haiku 4.5), Customer spawner (DB-integrated)
+- **Customer Spawner** (`src/lib/agents/customer-spawner.ts`): Pulls from DB `customers` table — buyers → active waves, persuadable → passive waves. Falls back to hard-coded pool if DB empty.
+- **Customer Spawner API** (`/api/agents/customer-spawner`): LLM-powered (Haiku) customer generator — creates new customers in DB with diverse personalities.
+- **Customer Decide API** (`/api/agents/customer-decide`): LLM-powered (Haiku) buying decision — processes N customers from pool, each decides to buy or leave.
+- **Curator Agent** (`/api/agents/curator`): Film curator — add/retire movies, getGenreDistribution, getMoviePerformance, trendAnalysis.
+- **SSE streaming** (`/api/simulation/stream`): Real-time events including `conversation_update` for step-by-step progress.
+- **Cross-component events**: `window` custom events (`sim:customer-status`, `sim:conversation-update`, `sim:state`, `sim:control`) bridge components across tabs.
 - **Shared SQLite DB** is the source of truth for all agents
 - **Write queue** (`src/lib/write-queue.ts`): Async mutex prevents SQLITE_BUSY
-- **Frontend**: Dashboard (simulation + analytics), Curator, Customers (bubble pool), Time tabs
-- **Customer Pool** (`/api/customers`): Lists customers who haven't booked yet. Polls every 3s. Bubble UI — hover for details. Customers disappear when they book.
+- **Frontend**: Dashboard, Simulation, Customers tabs — all stay mounted (CSS display toggle) so SSE persists across tab switches.
+- **Customer Pool** (`/api/customers`): Lists unbooked customers. Bubble physics pool with agent connection visualization.
 - DB connection: `src/lib/db.ts` — singleton `better-sqlite3` with WAL mode + foreign keys
 - See `ARCHITECTURE.md` for full diagrams and details
 
@@ -67,17 +71,26 @@ node scripts/run-migration.js 003_customers
 ## Simulation Model
 - Day-based: each day = complete cycle (strategic agents → 3 customer waves → end-of-day)
 - Customer waves: Morning (3 active + 1 passive), Afternoon (5+2), Evening (7+3)
-- Active customers use Haiku to talk to Manager agent
-- Passive customers are deterministic (rule-based promo acceptance)
+- Active customers pulled from DB `customers` table (buyer type), talk to Manager agent (Haiku)
+- Passive customers pulled from DB (persuadable type), deterministic promo acceptance
+- Conversations stream step-by-step: greeting → browsing → checking showtimes → booking → result
+- Each conversation result emits individually as it completes (parallel but streamed)
 - No artificial delays — speed determined by API call completion
 
 ## Current State
-- Full multi-agent simulation system implemented
-- Dashboard has Simulation (live), Activity, Conversations, Analytics, Schedule, Alerts subtabs
-- SSE streaming from simulation engine to frontend
+- Full multi-agent simulation system implemented and integrated end-to-end
+- **Simulation tab** (default): Controls, Activity feed, Conversations sub-tabs + embedded customer pool
+- **Customers tab**: Physics-based bubble pool (left) + Live Agent Conversations feed (right)
+- **Dashboard tab**: Analytics, TV guide, movies, schedule, alerts
+- **Global simulation button** in header — start/stop from any tab
+- All tabs stay mounted — SSE connection persists across tab switches
+- SSE streams individual conversation results + step-by-step progress updates
 - All agent types functional: Optimizer, Scheduler, Promoter, Manager, Active/Passive Customers
-- **Curator Agent**: Full implementation — addMovie, retireMovie, getGenreDistribution, getMoviePerformance, trendAnalysis. Curator tab with chat UI and Auto Rebalance.
-- **Customer Pool**: Bubble UI (3D-style circles, multi-directional drift). Polls every 3s. New customers pop in; customers who book disappear. Add via `node scripts/add-customer.js`.
+- **Curator Agent**: Full implementation with chat UI.
+- **Customer Pool**: Physics bubble pool with agent connection visualization. Individual Manager/Promoter agent nodes appear during active conversations. SVG connection lines + "Chatting"/"Promo" badges on active customers.
+- **Live Conversation Feed**: Right panel shows real-time step-by-step conversation progress (greeting → browsing → checking → booking → result) with LIVE/BOOKED/LEFT status badges.
+- **Customer Spawner API**: LLM generates diverse customer profiles on demand (auto-spawns when pool drops below threshold).
+- **Customer Decide API**: LLM processes customers through buying decisions independently of simulation.
 
 ## Conventions
 - .env is gitignored but committed as .env (hackathon context)
@@ -88,6 +101,8 @@ node scripts/run-migration.js 003_customers
 - Agent files: `src/lib/agents/*.ts`
 - Luxury cinema gold theme (CSS vars in globals.css)
 - Tests: Vitest with in-memory SQLite (`vitest run`). Tests don't touch `movies.db`.
+- Cross-component communication: `window` custom events (`sim:customer-status`, `sim:conversation-update`, `sim:state`, `sim:control`)
+- All tabs mounted via CSS `display` toggle (not conditional rendering) — preserves SSE connections and component state
 
 ## Gotchas
 - `better-sqlite3` requires `serverExternalPackages` in `next.config.ts` for production builds (Turbopack). Dev mode works fine without it.
@@ -95,3 +110,6 @@ node scripts/run-migration.js 003_customers
 - All DB writes during simulation must go through `withWriteLock()` from `write-queue.ts` to avoid SQLITE_BUSY errors from concurrent agent writes.
 - The simulation clock is a singleton — `getSimulationClock()`. Never create a second instance.
 - SSE stream route (`/api/simulation/stream`) starts the engine on connect and stops on disconnect. Only one stream connection at a time.
+- Manager Agent `onProgress` callback emits `conversation_update` SSE events for real-time step streaming. Don't remove the callback parameter.
+- Customer spawner reads from DB first, falls back to hard-coded pool. The DB query uses `ORDER BY RANDOM()` for variety.
+- Tabs are always mounted (CSS display toggle). Don't switch to conditional rendering or SSE will break on tab switch.
