@@ -1,12 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import SimulationControls from "./SimulationControls";
-import KPIBar from "./KPIBar";
-import TheaterGrid from "./TheaterGrid";
-import ActivityFeed from "./ActivityFeed";
-import ConversationView from "./ConversationView";
-import type { SimulationEvent, ConversationEntry } from "@/lib/agents/types";
+// Analytics-only dashboard (simulation moved to SimulationPanel)
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -105,7 +100,7 @@ interface FullState {
   simTime: string;
 }
 
-type SubTab = "simulation" | "activity" | "conversations" | "overview" | "theaters" | "movies" | "schedule" | "alerts";
+type SubTab = "overview" | "theaters" | "movies" | "schedule" | "alerts";
 
 const STATUS_BADGE: Record<string, string> = {
   scheduled: "bg-[#2a2a30] text-[#8a8880]",
@@ -301,22 +296,10 @@ export default function Dashboard() {
   const [showtimes, setShowtimes] = useState<ShowtimeStatus[]>([]);
   const [movies, setMovies] = useState<MoviePerformance[]>([]);
   const [loading, setLoading] = useState(true);
-  const [subTab, setSubTab] = useState<SubTab>("simulation");
+  const [subTab, setSubTab] = useState<SubTab>("overview");
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [selectedTheater, setSelectedTheater] = useState<number | null>(null);
   const [movieSearch, setMovieSearch] = useState("");
-
-  // Simulation state
-  const [simRunning, setSimRunning] = useState(false);
-  const [dayNumber, setDayNumber] = useState(0);
-  const [currentDate, setCurrentDate] = useState("");
-  const [currentWave, setCurrentWave] = useState("");
-  const [simTime, setSimTime] = useState("");
-  const [simEvents, setSimEvents] = useState<SimulationEvent[]>([]);
-  const [simConversations, setSimConversations] = useState<ConversationEntry[]>([]);
-  const [simKpis, setSimKpis] = useState<KPIs | null>(null);
-  const [simTheaters, setSimTheaters] = useState<TheaterSummary[]>([]);
-  const eventSourceRef = useRef<EventSource | null>(null);
 
   // ── Analytics data fetch ──────────────────────────────────────────────
 
@@ -335,10 +318,6 @@ export default function Dashboard() {
       setShowtimes(st.showtimes || []);
       setMovies(mv.movies || []);
 
-      // Also update sim state from analytics if no sim-specific data yet
-      if (!simKpis) setSimKpis(full.kpis);
-      if (simTheaters.length === 0) setSimTheaters(full.theaters);
-
       if (!selectedDate && full.dailySnapshots.length > 0) {
         setSelectedDate(full.dailySnapshots[0].date);
       }
@@ -346,162 +325,13 @@ export default function Dashboard() {
     } catch {
       setLoading(false);
     }
-  }, [selectedDate, simKpis, simTheaters.length]);
+  }, [selectedDate]);
 
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
   }, [fetchData]);
-
-  // ── Simulation SSE ────────────────────────────────────────────────────
-
-  const startSimulation = useCallback(() => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-    }
-
-    setSimRunning(true);
-    setSimEvents([]);
-    setSimConversations([]);
-
-    const es = new EventSource("/api/simulation/stream");
-    eventSourceRef.current = es;
-
-    es.addEventListener("day_start", (e) => {
-      const data = JSON.parse(e.data);
-      setDayNumber(data.dayNumber);
-      setCurrentDate(data.date);
-      setSimTime(data.simTime);
-      setCurrentWave("");
-      setSimEvents((prev) => [...prev.slice(-80), {
-        sim_time: data.simTime,
-        event_type: "tick_start",
-        agent: "engine",
-        summary: `Day ${data.dayNumber} started (${data.date})`,
-      }]);
-    });
-
-    es.addEventListener("day_end", (e) => {
-      const data = JSON.parse(e.data);
-      setCurrentWave("");
-      if (data.kpis) setSimKpis(data.kpis as KPIs);
-      setSimEvents((prev) => [...prev.slice(-80), {
-        sim_time: data.date,
-        event_type: "tick_end",
-        agent: "engine",
-        summary: `Day ${data.dayNumber} ended — ${data.summary.totalBookings} bookings, ${data.summary.totalLeft} left`,
-      }]);
-      // Refresh analytics after each day
-      fetchData();
-    });
-
-    es.addEventListener("wave_start", (e) => {
-      const data = JSON.parse(e.data);
-      setCurrentWave(data.wave);
-      setSimEvents((prev) => [...prev.slice(-80), {
-        sim_time: data.timeLabel,
-        event_type: "tick_start",
-        agent: "engine",
-        summary: `${data.wave.charAt(0).toUpperCase() + data.wave.slice(1)} wave started`,
-      }]);
-    });
-
-    es.addEventListener("wave_end", (e) => {
-      const data = JSON.parse(e.data);
-      setSimEvents((prev) => [...prev.slice(-80), {
-        sim_time: "",
-        event_type: "tick_end",
-        agent: "engine",
-        summary: `${data.wave.charAt(0).toUpperCase() + data.wave.slice(1)} wave: ${data.booked} booked, ${data.left} left`,
-      }]);
-    });
-
-    es.addEventListener("event", (e) => {
-      const data = JSON.parse(e.data) as SimulationEvent;
-      setSimEvents((prev) => [...prev.slice(-80), data]);
-    });
-
-    es.addEventListener("conversation", (e) => {
-      const data = JSON.parse(e.data) as ConversationEntry;
-      setSimConversations((prev) => [...prev.slice(-50), data]);
-    });
-
-    es.addEventListener("kpi", (e) => {
-      const data = JSON.parse(e.data) as KPIs;
-      setSimKpis(data);
-    });
-
-    es.addEventListener("state", (e) => {
-      const data = JSON.parse(e.data);
-      if (data.kpis) setSimKpis(data.kpis as KPIs);
-      if (data.theaters) setSimTheaters(data.theaters as TheaterSummary[]);
-    });
-
-    es.addEventListener("stopped", () => {
-      setSimRunning(false);
-      setCurrentWave("");
-      fetchData();
-    });
-
-    es.addEventListener("error", () => {
-      setSimRunning(false);
-      setCurrentWave("");
-    });
-
-    es.onerror = () => {
-      setSimRunning(false);
-      setCurrentWave("");
-      es.close();
-      eventSourceRef.current = null;
-    };
-  }, [fetchData]);
-
-  const stopSimulation = useCallback(async () => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
-    await fetch("/api/simulation/control", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "stop" }),
-    });
-    setSimRunning(false);
-    setCurrentWave("");
-    fetchData();
-  }, [fetchData]);
-
-  const resetSimulation = useCallback(async () => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
-    await fetch("/api/simulation/control", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "reset" }),
-    });
-    setSimRunning(false);
-    setDayNumber(0);
-    setCurrentDate("");
-    setCurrentWave("");
-    setSimTime("");
-    setSimEvents([]);
-    setSimConversations([]);
-    setSimKpis(null);
-    setSimTheaters([]);
-    fetchData();
-  }, [fetchData]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-    };
-  }, []);
 
   // ── Render ────────────────────────────────────────────────────────────
 
@@ -514,8 +344,6 @@ export default function Dashboard() {
   }
 
   const { kpis } = state;
-  const displayKpis = simKpis || kpis;
-  const displayTheaters = simTheaters.length > 0 ? simTheaters : state.theaters;
 
   const filteredShowtimes = showtimes.filter((s) => {
     if (selectedDate && s.show_date !== selectedDate) return false;
@@ -535,9 +363,6 @@ export default function Dashboard() {
       {/* Sub-tabs */}
       <div className="mb-5 flex gap-1 rounded-lg p-1 animate-fade-in" style={{ background: "var(--surface)" }}>
         {([
-          ["simulation", "Simulation"],
-          ["activity", "Activity"],
-          ["conversations", `Conversations (${simConversations.length})`],
           ["overview", "Analytics"],
           ["theaters", "Theaters"],
           ["movies", "Movies"],
@@ -553,75 +378,6 @@ export default function Dashboard() {
           </button>
         ))}
       </div>
-
-      {/* ── Simulation ─────────────────────────────────────── */}
-      {subTab === "simulation" && (
-        <div className="space-y-4 animate-fade-in">
-          <SimulationControls
-            isRunning={simRunning}
-            dayNumber={dayNumber}
-            currentDate={currentDate}
-            currentWave={currentWave}
-            simTime={simTime}
-            onStart={startSimulation}
-            onStop={stopSimulation}
-            onReset={resetSimulation}
-          />
-
-          <KPIBar
-            revenue={displayKpis.total_revenue}
-            ticketsSold={displayKpis.total_tickets_sold}
-            activePromos={displayKpis.total_promos_active}
-            avgFillRate={displayKpis.avg_fill_rate}
-            totalBookings={displayKpis.total_bookings}
-            dayNumber={dayNumber}
-          />
-
-          <div>
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.15em] gold-text">
-              Theater Status
-            </h3>
-            <TheaterGrid theaters={displayTheaters} />
-          </div>
-
-          {/* Recent activity preview */}
-          {simEvents.length > 0 && (
-            <div className="surface-card rounded-xl p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.15em] gold-text">
-                  Recent Activity
-                </h3>
-                <button
-                  onClick={() => setSubTab("activity")}
-                  className="text-xs" style={{ color: "var(--gold)" }}
-                >
-                  View All
-                </button>
-              </div>
-              <ActivityFeed events={simEvents.slice(-8)} />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Activity Feed ──────────────────────────────────── */}
-      {subTab === "activity" && (
-        <div className="animate-fade-in">
-          <div className="surface-card rounded-xl p-5">
-            <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.15em] gold-text">
-              Simulation Activity Log
-            </h3>
-            <ActivityFeed events={simEvents} />
-          </div>
-        </div>
-      )}
-
-      {/* ── Conversations ──────────────────────────────────── */}
-      {subTab === "conversations" && (
-        <div className="animate-fade-in">
-          <ConversationView conversations={simConversations} />
-        </div>
-      )}
 
       {/* ── Overview / Analytics ───────────────────────────── */}
       {subTab === "overview" && (

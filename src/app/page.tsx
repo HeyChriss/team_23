@@ -4,11 +4,10 @@ import { useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import Dashboard from "@/components/Dashboard";
-import CuratorPanel from "@/components/CuratorPanel";
-import TimeControl from "@/components/TimeControl";
+import SimulationPanel from "@/components/SimulationPanel";
 import CustomersPanel from "@/components/CustomersPanel";
 
-type Tab = "chat" | "dashboard" | "curator" | "customers" | "time";
+type Tab = "chat" | "dashboard" | "simulation" | "customers";
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("chat");
@@ -43,9 +42,8 @@ export default function Home() {
             {([
               { key: "chat", label: "Chat" },
               { key: "dashboard", label: "Dashboard" },
-              { key: "curator", label: "Curator" },
+              { key: "simulation", label: "Simulation" },
               { key: "customers", label: "Customers" },
-              { key: "time", label: "Time" },
             ] as { key: Tab; label: string }[]).map(({ key, label }) => (
               <button
                 key={key}
@@ -66,24 +64,17 @@ export default function Home() {
         </main>
       )}
 
-      {/* ── Curator Tab ───────────────────────────────────────────────────── */}
-      {tab === "curator" && (
+      {/* ── Simulation Tab ────────────────────────────────────────────────── */}
+      {tab === "simulation" && (
         <main className="flex-1 overflow-y-auto">
-          <CuratorPanel />
+          <SimulationPanel />
         </main>
       )}
 
-      {/* ── Customers Tab ─────────────────────────────────────────────────── */}
+      {/* ── Customers Tab ────────────────────────────────────────────────── */}
       {tab === "customers" && (
         <main className="flex-1 overflow-y-auto">
           <CustomersPanel />
-        </main>
-      )}
-
-      {/* ── Time Tab ─────────────────────────────────────────────────────── */}
-      {tab === "time" && (
-        <main className="flex-1 overflow-y-auto">
-          <TimeControl />
         </main>
       )}
 
@@ -92,7 +83,6 @@ export default function Home() {
         <>
           <main className="flex-1 overflow-y-auto px-6 py-8">
             <div className="mx-auto max-w-3xl space-y-5">
-              {/* Empty state */}
               {messages.length === 0 && (
                 <div className="animate-fade-in py-24 text-center">
                   <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl" style={{ background: "var(--gold-glow)", border: "1px solid rgba(212,168,83,0.2)" }}>
@@ -123,7 +113,6 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Messages */}
               {messages.map((message) => (
                 <div
                   key={message.id}
@@ -140,34 +129,21 @@ export default function Home() {
                       switch (part.type) {
                         case "text":
                           return (
-                            <div
-                              key={`${message.id}-${i}`}
-                              className="whitespace-pre-wrap text-sm leading-relaxed"
-                            >
+                            <div key={`${message.id}-${i}`} className="whitespace-pre-wrap text-sm leading-relaxed">
                               {part.text}
                             </div>
                           );
                         default: {
-                          if (
-                            part.type.startsWith("tool-") &&
-                            "state" in part
-                          ) {
-                            const toolPart = part as {
-                              type: string;
-                              state: string;
-                            };
+                          if (part.type.startsWith("tool-") && "state" in part) {
+                            const toolPart = part as { type: string; state: string };
                             return (
-                              <div
-                                key={`${message.id}-${i}`}
+                              <div key={`${message.id}-${i}`}
                                 className="my-1.5 flex items-center gap-2 rounded-lg px-3 py-2 text-xs"
-                                style={{ background: "rgba(0,0,0,0.2)", color: "var(--text-secondary)" }}
-                              >
+                                style={{ background: "rgba(0,0,0,0.2)", color: "var(--text-secondary)" }}>
                                 <span className={toolPart.state === "output-available" ? "gold-text" : "animate-pulse"}>
                                   {toolPart.state === "output-available" ? "&#10003;" : "&#9696;"}
                                 </span>
-                                <span className="font-mono">
-                                  {toolPart.type.replace("tool-", "")}
-                                </span>
+                                <span className="font-mono">{toolPart.type.replace("tool-", "")}</span>
                               </div>
                             );
                           }
@@ -184,9 +160,7 @@ export default function Home() {
                   <div className="msg-bot rounded-2xl px-5 py-3.5">
                     <div className="flex items-center gap-2">
                       <span className="inline-block h-2 w-2 animate-pulse rounded-full" style={{ background: "var(--gold)" }} />
-                      <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                        Thinking...
-                      </span>
+                      <span className="text-sm" style={{ color: "var(--text-secondary)" }}>Thinking...</span>
                     </div>
                   </div>
                 </div>
@@ -194,15 +168,11 @@ export default function Home() {
             </div>
           </main>
 
-          {/* ── Input bar ─────────────────────────────────────────────────── */}
           <footer className="px-6 py-5" style={{ borderTop: "1px solid var(--surface-border)" }}>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (input.trim()) {
-                  sendMessage({ text: input });
-                  setInput("");
-                }
+                if (input.trim()) { sendMessage({ text: input }); setInput(""); }
               }}
               className="mx-auto flex max-w-3xl gap-3"
             >
@@ -212,11 +182,7 @@ export default function Home() {
                 placeholder="Ask about movies, book tickets, or order snacks..."
                 className="cinema-input flex-1 rounded-xl px-5 py-3.5 text-sm"
               />
-              <button
-                type="submit"
-                disabled={isLoading || !input.trim()}
-                className="btn-send"
-              >
+              <button type="submit" disabled={isLoading || !input.trim()} className="btn-send">
                 Send
               </button>
             </form>
