@@ -44,18 +44,10 @@ export async function runManagerConversation(
         ? "I prefer evening showings (after 5 PM)."
         : "I'm flexible on timing.";
 
-  const customerPrompt = `You are ${customer.name}, a movie theater customer. You want to watch a movie today.
+  const customerRequest = `A customer named ${customer.name} just walked in and said:
+"Hi! I'm looking for ${customer.favoriteGenres.join(" or ")} movies. I need ${customer.groupSize} ticket${customer.groupSize > 1 ? "s" : ""}. ${budgetConstraint} ${timeConstraint}"
 
-Your preferences:
-- Favorite genres: ${customer.favoriteGenres.join(", ")}
-- Group size: ${customer.groupSize} ticket(s)
-- ${budgetConstraint}
-- ${timeConstraint}
-- Spontaneity: ${customer.spontaneity > 0.6 ? "You're open to suggestions outside your usual genres." : "You stick to what you like."}
-
-Talk to the theater manager to find a movie and book tickets. Be conversational but concise (1-2 sentences per reply).
-If nothing appeals to you or everything is sold out or too expensive, politely leave.
-The current time is ${currentTime} on ${today}.`;
+Help this customer find a movie and book tickets. Use the tools to look up what's showing, find available showtimes, and complete the booking. Be friendly and efficient — get them booked!`;
 
   // Emit greeting
   onProgress?.({
@@ -68,12 +60,17 @@ The current time is ${currentTime} on ${today}.`;
     const result = await generateText({
       model: anthropic("claude-haiku-4-5-20251001"),
       stopWhen: stepCountIs(3),
-      system: `You are the Manager Agent for StarLight Cinemas. A customer has arrived and wants to book tickets.
-Help them find a movie and complete their booking. Be helpful and efficient.
+      system: `You are the Manager Agent at StarLight Cinemas. Your ONLY job is to help customers book tickets.
 Today is ${today}, current time is ${currentTime}.
-Guide the customer: suggest movies matching their preferences → show available showtimes → book tickets.
-Always try to make a sale, but respect the customer's preferences.`,
-      prompt: customerPrompt,
+
+When a customer walks in:
+1. Use getNowShowing to find movies matching their preferred genres
+2. Use getShowtimes to find available times for a good match
+3. Use bookTickets to complete the booking with the right number of tickets
+
+Be efficient — use tools immediately, don't ask clarifying questions. The customer already told you what they want.
+If nothing matches or seats are unavailable, say so briefly. Do NOT roleplay as the customer.`,
+      prompt: customerRequest,
       tools: {
         getNowShowing: tool({
           description: "Get movies showing today, optionally filtered by genre",

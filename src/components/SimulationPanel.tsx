@@ -67,11 +67,7 @@ type SubTab = "controls" | "activity" | "conversations";
 
 export default function SimulationPanel() {
   const [subTab, setSubTab] = useState<SubTab>("controls");
-
-  // Clock state
   const [clock, setClock] = useState<ClockState | null>(null);
-
-  // Simulation engine state
   const [simRunning, setSimRunning] = useState(false);
   const [dayNumber, setDayNumber] = useState(0);
   const [currentDate, setCurrentDate] = useState("");
@@ -81,15 +77,15 @@ export default function SimulationPanel() {
   const [simConversations, setSimConversations] = useState<ConversationEntry[]>([]);
   const [simKpis, setSimKpis] = useState<KPIs | null>(null);
   const [simTheaters, setSimTheaters] = useState<TheaterSummary[]>([]);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const pollIndexRef = useRef(0);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Clock polling ──────────────────────────────────────────────────────
 
   const fetchClock = useCallback(async () => {
     try {
       const res = await fetch("/api/clock");
-      const data = await res.json();
-      setClock(data);
+      setClock(await res.json());
     } catch { /* ignore */ }
   }, []);
 
@@ -105,11 +101,10 @@ export default function SimulationPanel() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = await res.json();
-    setClock(data);
+    setClock(await res.json());
   };
 
-  // ── Fetch initial KPIs/theaters ────────────────────────────────────────
+  // ── Fetch initial state ────────────────────────────────────────────────
 
   const fetchState = useCallback(async () => {
     try {
@@ -120,158 +115,170 @@ export default function SimulationPanel() {
     } catch { /* ignore */ }
   }, [simKpis, simTheaters.length]);
 
-  useEffect(() => {
-    fetchState();
+  useEffect(() => { fetchState(); }, [fetchState]);
+
+  // ── Polling-based simulation (replaces SSE) ────────────────────────────
+  // Engine pushes events to an in-memory bus on the server.
+  // We poll GET /api/simulation/events?since=N every 300ms.
+  // No SSE, no streams, no Turbopack buffering.
+
+  const processEvent = useCallback((ev: { type: string; data: unknown }) => {
+    const data = ev.data as Record<string, unknown>;
+
+    switch (ev.type) {
+      case "day_start":
+        if (data.dayNumber) setDayNumber(data.dayNumber as number);
+        if (data.date) setCurrentDate(data.date as string);
+        if (data.simTime) setSimTime(data.simTime as string);
+        setCurrentWave("");
+        if (data.date) {
+          setSimEvents((prev) => [...prev.slice(-80), {
+            sim_time: (data.simTime as string) || "", event_type: "tick_start", agent: "engine",
+            summary: `Day ${data.dayNumber} started (${data.date})`,
+          }]);
+        }
+        break;
+
+      case "day_end":
+        setCurrentWave("");
+        if (data.kpis) setSimKpis(data.kpis as KPIs);
+        setSimEvents((prev) => [...prev.slice(-80), {
+          sim_time: (data.date as string) || "", event_type: "tick_end", agent: "engine",
+          summary: `Day ${data.dayNumber} ended`,
+        }]);
+        fetchState();
+        window.dispatchEvent(new CustomEvent("sim:customer-refresh"));
+        break;
+
+      case "wave_start":
+        setCurrentWave((data.wave as string) || "");
+        setSimEvents((prev) => [...prev.slice(-80), {
+          sim_time: (data.timeLabel as string) || "", event_type: "tick_start", agent: "engine",
+          summary: `${String(data.wave || "").charAt(0).toUpperCase() + String(data.wave || "").slice(1)} wave started`,
+        }]);
+        break;
+
+      case "wave_end":
+        setSimEvents((prev) => [...prev.slice(-80), {
+          sim_time: "", event_type: "tick_end", agent: "engine",
+          summary: `${String(data.wave || "").charAt(0).toUpperCase() + String(data.wave || "").slice(1)} wave: ${data.booked || 0} booked, ${data.left || 0} left`,
+        }]);
+        window.dispatchEvent(new CustomEvent("sim:customer-refresh"));
+        break;
+
+      case "event": {
+        const evData = data as unknown as SimulationEvent;
+        setSimEvents((prev) => [...prev.slice(-80), evData]);
+        try {
+          const parsed = evData.data ? JSON.parse(evData.data as string) : {};
+          if (parsed.customer) {
+            if (evData.event_type === "customer_arrived") {
+              window.dispatchEvent(new CustomEvent("sim:customer-status", {
+                detail: { customerName: parsed.customer, status: "active", agentType: parsed.customerType === "passive" ? "promoter" : "manager" },
+              }));
+            } else if (evData.event_type === "promotion_accepted" || evData.event_type === "customer_booked") {
+              window.dispatchEvent(new CustomEvent("sim:customer-status", {
+                detail: { customerName: parsed.customer, status: "booked" },
+              }));
+            } else if (evData.event_type === "promotion_rejected" || evData.event_type === "customer_left") {
+              window.dispatchEvent(new CustomEvent("sim:customer-status", {
+                detail: { customerName: parsed.customer, status: "left" },
+              }));
+            }
+          }
+        } catch { /* ignore */ }
+        break;
+      }
+
+      case "conversation": {
+        const conv = data as unknown as ConversationEntry;
+        setSimConversations((prev) => [...prev.slice(-50), conv]);
+        if (conv.customerName) {
+          window.dispatchEvent(new CustomEvent("sim:customer-status", {
+            detail: { customerName: conv.customerName, status: conv.outcome === "booked" ? "booked" : "left" },
+          }));
+        }
+        break;
+      }
+
+      case "conversation_update":
+        window.dispatchEvent(new CustomEvent("sim:conversation-update", { detail: data }));
+        break;
+
+      case "kpi":
+        setSimKpis(data as unknown as KPIs);
+        break;
+
+      case "state":
+        if (data.kpis) setSimKpis(data.kpis as KPIs);
+        if (data.theaters) setSimTheaters(data.theaters as TheaterSummary[]);
+        break;
+
+      case "stopped":
+        setSimRunning(false);
+        setCurrentWave("");
+        fetchState();
+        break;
+    }
   }, [fetchState]);
 
-  // ── Simulation SSE ─────────────────────────────────────────────────────
+  const stopPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  }, []);
 
-  const startSimulation = useCallback(() => {
-    if (eventSourceRef.current) eventSourceRef.current.close();
+  const startPolling = useCallback(() => {
+    if (pollIntervalRef.current) return;
+    pollIntervalRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/simulation/events?since=${pollIndexRef.current}`);
+        const { events: newEvents, nextIndex } = await res.json();
+        pollIndexRef.current = nextIndex;
+        for (const ev of newEvents) {
+          processEvent(ev);
+        }
+        // Check if engine stopped
+        if (newEvents.some((e: { type: string }) => e.type === "stopped")) {
+          setSimRunning(false);
+        }
+      } catch { /* ignore */ }
+    }, 300);
+  }, [processEvent]);
 
+  const startSimulation = useCallback(async () => {
     setSimRunning(true);
     setSimEvents([]);
     setSimConversations([]);
+    pollIndexRef.current = 0;
 
-    const es = new EventSource("/api/simulation/stream");
-    eventSourceRef.current = es;
-
-    es.addEventListener("day_start", (e) => {
-      const data = JSON.parse(e.data);
-      setDayNumber(data.dayNumber);
-      setCurrentDate(data.date);
-      setSimTime(data.simTime);
-      setCurrentWave("");
-      setSimEvents((prev) => [...prev.slice(-80), {
-        sim_time: data.simTime, event_type: "tick_start", agent: "engine",
-        summary: `Day ${data.dayNumber} started (${data.date})`,
-      }]);
+    await fetch("/api/simulation/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "start" }),
     });
 
-    es.addEventListener("day_end", (e) => {
-      const data = JSON.parse(e.data);
-      setCurrentWave("");
-      if (data.kpis) setSimKpis(data.kpis as KPIs);
-      setSimEvents((prev) => [...prev.slice(-80), {
-        sim_time: data.date, event_type: "tick_end", agent: "engine",
-        summary: `Day ${data.dayNumber} ended — ${data.summary.totalBookings} bookings, ${data.summary.totalLeft} left`,
-      }]);
-      fetchState();
-    });
-
-    es.addEventListener("wave_start", (e) => {
-      const data = JSON.parse(e.data);
-      setCurrentWave(data.wave);
-      setSimEvents((prev) => [...prev.slice(-80), {
-        sim_time: data.timeLabel, event_type: "tick_start", agent: "engine",
-        summary: `${data.wave.charAt(0).toUpperCase() + data.wave.slice(1)} wave started`,
-      }]);
-    });
-
-    es.addEventListener("wave_end", (e) => {
-      const data = JSON.parse(e.data);
-      setSimEvents((prev) => [...prev.slice(-80), {
-        sim_time: "", event_type: "tick_end", agent: "engine",
-        summary: `${data.wave.charAt(0).toUpperCase() + data.wave.slice(1)} wave: ${data.booked} booked, ${data.left} left`,
-      }]);
-      // Tell CustomerPanel to refresh from DB after each wave
-      window.dispatchEvent(new CustomEvent("sim:customer-refresh"));
-    });
-
-    es.addEventListener("event", (e) => {
-      const evData = JSON.parse(e.data);
-      setSimEvents((prev) => [...prev.slice(-80), evData]);
-
-      // Broadcast customer status to other components
-      if (evData.event_type === "customer_arrived") {
-        try {
-          const parsed = evData.data ? JSON.parse(evData.data) : {};
-          if (parsed.customer) {
-            window.dispatchEvent(new CustomEvent("sim:customer-status", {
-              detail: {
-                customerName: parsed.customer,
-                status: "active",
-                agentType: parsed.customerType === "passive" ? "promoter" : "manager",
-              },
-            }));
-          }
-        } catch { /* ignore parse errors */ }
-      } else if (evData.event_type === "promotion_accepted" || evData.event_type === "customer_booked") {
-        try {
-          const parsed = evData.data ? JSON.parse(evData.data) : {};
-          if (parsed.customer) {
-            window.dispatchEvent(new CustomEvent("sim:customer-status", {
-              detail: { customerName: parsed.customer, status: "booked" },
-            }));
-          }
-        } catch { /* ignore */ }
-      } else if (evData.event_type === "promotion_rejected" || evData.event_type === "customer_left") {
-        try {
-          const parsed = evData.data ? JSON.parse(evData.data) : {};
-          if (parsed.customer) {
-            window.dispatchEvent(new CustomEvent("sim:customer-status", {
-              detail: { customerName: parsed.customer, status: "left" },
-            }));
-          }
-        } catch { /* ignore */ }
-      }
-    });
-
-    es.addEventListener("conversation", (e) => {
-      const conv = JSON.parse(e.data);
-      setSimConversations((prev) => [...prev.slice(-50), conv]);
-
-      // Broadcast conversation outcome
-      if (conv.customerName) {
-        window.dispatchEvent(new CustomEvent("sim:customer-status", {
-          detail: {
-            customerName: conv.customerName,
-            status: conv.outcome === "booked" ? "booked" : "left",
-          },
-        }));
-      }
-    });
-
-    es.addEventListener("conversation_update", (e) => {
-      const update = JSON.parse(e.data);
-      window.dispatchEvent(new CustomEvent("sim:conversation-update", { detail: update }));
-    });
-
-    es.addEventListener("kpi", (e) => {
-      setSimKpis(JSON.parse(e.data) as KPIs);
-    });
-
-    es.addEventListener("state", (e) => {
-      const data = JSON.parse(e.data);
-      if (data.kpis) setSimKpis(data.kpis as KPIs);
-      if (data.theaters) setSimTheaters(data.theaters as TheaterSummary[]);
-    });
-
-    es.addEventListener("stopped", () => {
-      setSimRunning(false);
-      setCurrentWave("");
-      fetchState();
-    });
-
-    es.addEventListener("error", () => { setSimRunning(false); setCurrentWave(""); });
-    es.onerror = () => { setSimRunning(false); setCurrentWave(""); es.close(); eventSourceRef.current = null; };
-  }, [fetchState]);
+    startPolling();
+  }, [startPolling]);
 
   const stopSimulation = useCallback(async () => {
-    if (eventSourceRef.current) { eventSourceRef.current.close(); eventSourceRef.current = null; }
+    stopPolling();
     await fetch("/api/simulation/control", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "stop" }),
     });
     setSimRunning(false);
     setCurrentWave("");
     fetchState();
-  }, [fetchState]);
+  }, [fetchState, stopPolling]);
 
   const resetSimulation = useCallback(async () => {
-    if (eventSourceRef.current) { eventSourceRef.current.close(); eventSourceRef.current = null; }
+    stopPolling();
     await fetch("/api/simulation/control", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "reset" }),
     });
     setSimRunning(false);
@@ -283,12 +290,11 @@ export default function SimulationPanel() {
     setSimConversations([]);
     setSimKpis(null);
     setSimTheaters([]);
+    pollIndexRef.current = 0;
     fetchState();
-  }, [fetchState]);
+  }, [fetchState, stopPolling]);
 
-  useEffect(() => {
-    return () => { if (eventSourceRef.current) eventSourceRef.current.close(); };
-  }, []);
+  useEffect(() => { return () => stopPolling(); }, [stopPolling]);
 
   // ── Broadcast running state & listen for external start/stop ──────────
 
@@ -347,131 +353,67 @@ export default function SimulationPanel() {
       {/* ── Controls ──────────────────────────────────────────────────────── */}
       {subTab === "controls" && (
         <div className="space-y-5 animate-fade-in">
-          {/* Clock display + speed */}
           <div className="surface-card rounded-2xl p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <p className="text-xs uppercase tracking-[0.15em]" style={{ color: "var(--gold)" }}>
-                  Simulation Time
-                </p>
-                <p className="mt-1 text-2xl font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>
-                  {clockTime}
-                </p>
+                <p className="text-xs uppercase tracking-[0.15em]" style={{ color: "var(--gold)" }}>Simulation Time</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>{clockTime}</p>
               </div>
               <div className="text-right">
-                <p className="text-xs uppercase tracking-[0.15em]" style={{ color: "var(--text-muted)" }}>
-                  Speed
-                </p>
-                <p className="mt-1 text-2xl font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>
-                  {clock ? formatSpeed(clock.speed) : "--"}
-                </p>
+                <p className="text-xs uppercase tracking-[0.15em]" style={{ color: "var(--text-muted)" }}>Speed</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>{clock ? formatSpeed(clock.speed) : "--"}</p>
               </div>
             </div>
-
-            {/* Speed slider */}
-            <input
-              type="range"
-              min="0"
-              max="100"
-              step="0.5"
-              value={sliderValue}
+            <input type="range" min="0" max="100" step="0.5" value={sliderValue}
               onChange={(e) => sendClockAction({ action: "setSpeed", speed: sliderToSpeed(parseFloat(e.target.value)) })}
-              className="w-full accent-[#d4a853] cursor-pointer"
-              style={{ height: "6px" }}
-            />
+              className="w-full accent-[#d4a853] cursor-pointer" style={{ height: "6px" }} />
             <div className="mt-1 flex justify-between text-[10px]" style={{ color: "var(--text-muted)" }}>
-              <span>0.5x</span>
-              <span>60x</span>
-              <span>3,600x</span>
-              <span>100Kx</span>
+              <span>0.5x</span><span>60x</span><span>3,600x</span><span>100Kx</span>
             </div>
-
-            {/* Clock controls */}
             <div className="mt-4 flex gap-3">
               {clock && clock.isRunning && !clock.isPaused ? (
                 <button onClick={() => sendClockAction({ action: "pause" })}
                   className="rounded-xl px-6 py-2.5 text-sm font-semibold transition-all hover:translate-y-[-1px]"
-                  style={{ background: "var(--gold)", color: "#0a0a0a" }}>
-                  Pause Clock
-                </button>
+                  style={{ background: "var(--gold)", color: "#0a0a0a" }}>Pause Clock</button>
               ) : (
                 <button onClick={() => sendClockAction({ action: "start" })}
                   className="rounded-xl px-6 py-2.5 text-sm font-semibold transition-all hover:translate-y-[-1px]"
-                  style={{ background: "var(--accent-green)", color: "#0a0a0a" }}>
-                  {clock?.isRunning ? "Resume Clock" : "Start Clock"}
-                </button>
+                  style={{ background: "var(--accent-green)", color: "#0a0a0a" }}>{clock?.isRunning ? "Resume Clock" : "Start Clock"}</button>
               )}
               <button onClick={() => sendClockAction({ action: "reset" })}
                 className="rounded-xl px-6 py-2.5 text-sm font-semibold transition-all hover:translate-y-[-1px]"
-                style={{ background: "var(--surface-raised)", border: "1px solid var(--surface-border)", color: "var(--text-secondary)" }}>
-                Reset Clock
-              </button>
-
-              {/* Quick advance */}
+                style={{ background: "var(--surface-raised)", border: "1px solid var(--surface-border)", color: "var(--text-secondary)" }}>Reset Clock</button>
               <div className="ml-auto flex gap-2">
-                {[
-                  { label: "+1h", minutes: 60 },
-                  { label: "+6h", minutes: 360 },
-                  { label: "+1d", minutes: 1440 },
-                  { label: "+1w", minutes: 10080 },
-                ].map((p) => (
-                  <button key={p.minutes}
-                    onClick={() => sendClockAction({ action: "advance", minutes: p.minutes })}
+                {[{ label: "+1h", minutes: 60 }, { label: "+6h", minutes: 360 }, { label: "+1d", minutes: 1440 }, { label: "+1w", minutes: 10080 }].map((p) => (
+                  <button key={p.minutes} onClick={() => sendClockAction({ action: "advance", minutes: p.minutes })}
                     className="rounded-lg px-3 py-2 text-xs font-medium transition-all hover:translate-y-[-1px]"
-                    style={{ background: "var(--surface)", border: "1px solid var(--surface-border)", color: "var(--text-secondary)" }}>
-                    {p.label}
-                  </button>
+                    style={{ background: "var(--surface)", border: "1px solid var(--surface-border)", color: "var(--text-secondary)" }}>{p.label}</button>
                 ))}
               </div>
             </div>
           </div>
 
-          {/* Simulation engine controls */}
-          <SimulationControls
-            isRunning={simRunning}
-            dayNumber={dayNumber}
-            currentDate={currentDate}
-            currentWave={currentWave}
-            simTime={simTime}
-            onStart={startSimulation}
-            onStop={stopSimulation}
-            onReset={resetSimulation}
-          />
+          <SimulationControls isRunning={simRunning} dayNumber={dayNumber} currentDate={currentDate}
+            currentWave={currentWave} simTime={simTime} onStart={startSimulation} onStop={stopSimulation} onReset={resetSimulation} />
 
-          {/* KPI bar */}
-          <KPIBar
-            revenue={displayKpis.total_revenue}
-            ticketsSold={displayKpis.total_tickets_sold}
-            activePromos={displayKpis.total_promos_active}
-            avgFillRate={displayKpis.avg_fill_rate}
-            totalBookings={displayKpis.total_bookings}
-            dayNumber={dayNumber}
-          />
+          <KPIBar revenue={displayKpis.total_revenue} ticketsSold={displayKpis.total_tickets_sold}
+            activePromos={displayKpis.total_promos_active} avgFillRate={displayKpis.avg_fill_rate}
+            totalBookings={displayKpis.total_bookings} dayNumber={dayNumber} />
 
-          {/* Live customer pool */}
           <CustomerPoolLive />
 
-          {/* Theater grid */}
           {simTheaters.length > 0 && (
             <div>
-              <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.15em] gold-text">
-                Theater Status
-              </h3>
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.15em] gold-text">Theater Status</h3>
               <TheaterGrid theaters={simTheaters} />
             </div>
           )}
 
-          {/* Recent activity preview */}
           {simEvents.length > 0 && (
             <div className="surface-card rounded-xl p-4">
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.15em] gold-text">
-                  Recent Activity
-                </h3>
-                <button onClick={() => setSubTab("activity")}
-                  className="text-xs" style={{ color: "var(--gold)" }}>
-                  View All
-                </button>
+                <h3 className="text-xs font-semibold uppercase tracking-[0.15em] gold-text">Recent Activity</h3>
+                <button onClick={() => setSubTab("activity")} className="text-xs" style={{ color: "var(--gold)" }}>View All</button>
               </div>
               <ActivityFeed events={simEvents.slice(-8)} />
             </div>
@@ -479,19 +421,15 @@ export default function SimulationPanel() {
         </div>
       )}
 
-      {/* ── Activity Feed ─────────────────────────────────────────────────── */}
       {subTab === "activity" && (
         <div className="animate-fade-in">
           <div className="surface-card rounded-xl p-5">
-            <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.15em] gold-text">
-              Simulation Activity Log
-            </h3>
+            <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.15em] gold-text">Simulation Activity Log</h3>
             <ActivityFeed events={simEvents} />
           </div>
         </div>
       )}
 
-      {/* ── Conversations ─────────────────────────────────────────────────── */}
       {subTab === "conversations" && (
         <div className="animate-fade-in">
           <ConversationView conversations={simConversations} />
