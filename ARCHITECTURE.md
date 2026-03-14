@@ -10,7 +10,6 @@ CinemaAI is a **multi-agent AI theater simulation** where autonomous AI agents r
 graph TB
     subgraph Frontend["Frontend (React 19 + Next.js 16)"]
         Page["page.tsx<br/>Tab Switcher"]
-        Chat["Chat Tab<br/>Customer Chatbot"]
         Dash["Dashboard"]
 
         subgraph DashTabs["Dashboard Subtabs"]
@@ -34,7 +33,6 @@ graph TB
     end
 
     subgraph API["API Routes"]
-        ChatAPI["/api/chat<br/>Customer Chatbot"]
         ClockAPI["/api/clock<br/>Clock Control"]
         StateAPI["/api/theater-state<br/>State Queries"]
         SimControl["/api/simulation/control<br/>Start/Stop/Reset"]
@@ -72,7 +70,6 @@ graph TB
     end
 
     %% Frontend connections
-    Page --> Chat
     Page --> Dash
     Dash --> DashTabs
     SimTab --> SimControls
@@ -86,7 +83,6 @@ graph TB
     Stream -->|"day_start, wave_start,<br/>event, conversation,<br/>kpi, state, day_end"| Dash
 
     %% API
-    Chat -->|"POST"| ChatAPI
     SimControls -->|"POST"| SimControl
     Dash -->|"GET (poll)"| StateAPI
 
@@ -112,7 +108,6 @@ graph TB
     Mgr --> DB
     Active --> DB
     Passive --> DB
-    ChatAPI --> DB
     StateAPI --> TSC
     TSC --> DB
     SE --> EventStore
@@ -283,9 +278,8 @@ erDiagram
 ```
 src/
 ├── app/
-│   ├── page.tsx                          # Chat + Dashboard tabs
+│   ├── page.tsx                          # Dashboard + Curator + Customers + Time tabs
 │   └── api/
-│       ├── chat/route.ts                 # Customer chatbot (manual)
 │       ├── clock/route.ts                # Clock control
 │       ├── theater-state/route.ts        # State queries
 │       └── simulation/

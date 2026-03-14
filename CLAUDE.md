@@ -16,11 +16,10 @@ Always use context7 for the most up to date docs on the chosen tech stack.
 ## Architecture
 - **Simulation Engine** (`src/lib/simulation-engine.ts`): Day-by-day loop orchestrating all agents. No timers — runs at LLM speed.
 - **Agents** (`src/lib/agents/`): Optimizer, Scheduler, Promoter (Sonnet 4.6), Manager (Haiku 4.5), Customer spawner
-- **Customer chat** (`/api/chat`): Manual customer interaction (separate from simulation)
 - **SSE streaming** (`/api/simulation/stream`): Real-time events to dashboard
 - **Shared SQLite DB** is the source of truth for all agents
 - **Write queue** (`src/lib/write-queue.ts`): Async mutex prevents SQLITE_BUSY
-- **Frontend**: Chat tab (customer-facing) + Dashboard tab (simulation + analytics)
+- **Frontend**: Dashboard (simulation + analytics), Curator, Customers, Time tabs
 - DB connection: `src/lib/db.ts` — singleton `better-sqlite3` with WAL mode + foreign keys
 - See `ARCHITECTURE.md` for full diagrams and details
 
@@ -65,7 +64,6 @@ node scripts/run-migration.js 002_bookings_promos_events
 
 ## Current State
 - Full multi-agent simulation system implemented
-- Chat works end-to-end with 9 tools
 - Dashboard has Simulation (live), Activity, Conversations, Analytics, Schedule, Alerts subtabs
 - SSE streaming from simulation engine to frontend
 - All agent types functional: Optimizer, Scheduler, Promoter, Manager, Active/Passive Customers
