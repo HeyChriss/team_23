@@ -442,53 +442,208 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Theaters ────────────────────────────────────── */}
-      {subTab === "theaters" && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {state.theaters.map((t) => (
-            <div
-              key={t.id}
-              className="surface-card rounded-xl p-5"
-            >
-              <div className="flex items-start justify-between">
-                <h3 className="text-lg font-semibold">{t.name}</h3>
-                <div
-                  className={`rounded-full px-2 py-0.5 text-xs ${t.is_active ? "bg-green-600/20 text-green-400" : "bg-red-600/20 text-red-400"}`}
+      {/* ── Theaters (TV Guide) ─────────────────────────── */}
+      {subTab === "theaters" && (() => {
+        // TV guide config
+        const GUIDE_START = 8; // 8 AM
+        const GUIDE_END = 24;  // midnight
+        const TOTAL_HOURS = GUIDE_END - GUIDE_START;
+        const guideDate = selectedDate || state.dailySnapshots[0]?.date || "";
+
+        // Current sim time position
+        const simNow = new Date(state.simTime);
+        const simHour = simNow.getUTCHours() + simNow.getUTCMinutes() / 60;
+        const nowPercent = ((simHour - GUIDE_START) / TOTAL_HOURS) * 100;
+        const showNowLine = simNow.toISOString().split("T")[0] === guideDate && simHour >= GUIDE_START && simHour <= GUIDE_END;
+
+        // Showtimes for selected date grouped by theater
+        const dayShowtimes = showtimes.filter((s) => s.show_date === guideDate);
+        const theaterRows = state.theaters.map((t) => ({
+          ...t,
+          shows: dayShowtimes
+            .filter((s) => s.theater_id === t.id)
+            .sort((a, b) => a.start_time.localeCompare(b.start_time)),
+        }));
+
+        const timeToPercent = (time: string) => {
+          const [h, m] = time.split(":").map(Number);
+          return ((h + m / 60 - GUIDE_START) / TOTAL_HOURS) * 100;
+        };
+
+        // Hour markers
+        const hours = Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => GUIDE_START + i);
+
+        return (
+          <div className="space-y-4">
+            {/* Date selector */}
+            <div className="flex gap-1 rounded-lg p-1" style={{ background: "var(--surface)" }}>
+              {state.dailySnapshots.map((d) => (
+                <button
+                  key={d.date}
+                  onClick={() => setSelectedDate(d.date)}
+                  className={`tab-pill flex-1 ${selectedDate === d.date ? "active" : ""}`}
                 >
-                  {t.is_active ? "Active" : "Closed"}
+                  {new Date(d.date + "T12:00:00").toLocaleDateString("en-US", {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                  })}
+                </button>
+              ))}
+            </div>
+
+            {/* TV Guide grid */}
+            <div className="surface-card rounded-2xl p-4 overflow-x-auto">
+              <div style={{ minWidth: "900px" }}>
+                {/* Time header */}
+                <div className="flex">
+                  <div className="w-28 flex-shrink-0" />
+                  <div className="relative flex-1 h-8 border-b" style={{ borderColor: "var(--surface-border)" }}>
+                    {hours.map((h) => {
+                      const pct = ((h - GUIDE_START) / TOTAL_HOURS) * 100;
+                      return (
+                        <span
+                          key={h}
+                          className="absolute text-[10px] -translate-x-1/2"
+                          style={{ left: `${pct}%`, color: "var(--text-muted)", top: "4px" }}
+                        >
+                          {h === 0 || h === 24 ? "12a" : h === 12 ? "12p" : h > 12 ? `${h - 12}p` : `${h}a`}
+                        </span>
+                      );
+                    })}
+                    {/* Now line in header */}
+                    {showNowLine && (
+                      <div
+                        className="absolute top-0 bottom-0 w-px z-10"
+                        style={{ left: `${nowPercent}%`, background: "var(--accent-red)" }}
+                      />
+                    )}
+                  </div>
                 </div>
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-3 text-center">
-                <div>
-                  <p className="text-2xl font-bold">{t.seat_count}</p>
-                  <p className="text-xs text-[#5a5850]">Seats</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{t.total_showtimes}</p>
-                  <p className="text-xs text-[#5a5850]">Showings</p>
-                </div>
-                <div>
-                  <p className={`text-2xl font-bold ${t.fill_rate > 60 ? "text-green-400" : t.fill_rate > 30 ? "text-yellow-400" : "text-red-400"}`}>
-                    {t.fill_rate}%
-                  </p>
-                  <p className="text-xs text-[#5a5850]">Fill Rate</p>
-                </div>
-              </div>
-              <div className="mt-3">
-                <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800">
-                  <div
-                    className={`h-full rounded-full ${t.fill_rate > 60 ? "bg-green-500" : t.fill_rate > 30 ? "bg-yellow-500" : "bg-red-500"}`}
-                    style={{ width: `${t.fill_rate}%` }}
-                  />
-                </div>
-                <p className="mt-1 text-xs text-zinc-600">
-                  {t.total_booked.toLocaleString()} / {t.total_capacity.toLocaleString()} seats booked
-                </p>
+
+                {/* Theater rows */}
+                {theaterRows.map((t) => (
+                  <div key={t.id} className="flex border-b" style={{ borderColor: "var(--surface-border)" }}>
+                    {/* Theater label */}
+                    <div className="w-28 flex-shrink-0 flex flex-col justify-center py-3 pr-3">
+                      <span className="text-xs font-semibold truncate" style={{ color: "var(--text-primary)" }}>
+                        {t.name}
+                      </span>
+                      <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                        {t.seat_count} seats
+                      </span>
+                    </div>
+
+                    {/* Timeline */}
+                    <div className="relative flex-1 py-2" style={{ minHeight: "48px" }}>
+                      {/* Hour grid lines */}
+                      {hours.map((h) => {
+                        const pct = ((h - GUIDE_START) / TOTAL_HOURS) * 100;
+                        return (
+                          <div
+                            key={h}
+                            className="absolute top-0 bottom-0 w-px"
+                            style={{ left: `${pct}%`, background: "var(--surface-border)", opacity: 0.4 }}
+                          />
+                        );
+                      })}
+
+                      {/* Now line */}
+                      {showNowLine && (
+                        <div
+                          className="absolute top-0 bottom-0 w-0.5 z-20"
+                          style={{ left: `${nowPercent}%`, background: "var(--accent-red)" }}
+                        >
+                          <div
+                            className="absolute -top-1 -left-1 h-2.5 w-2.5 rounded-full"
+                            style={{ background: "var(--accent-red)" }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Showtime blocks */}
+                      {t.shows.map((s) => {
+                        const left = Math.max(0, timeToPercent(s.start_time));
+                        const right = Math.min(100, timeToPercent(s.end_time));
+                        const width = right - left;
+                        if (width <= 0) return null;
+
+                        const fillColor =
+                          s.fill_rate >= 90 ? "var(--accent-red)" :
+                          s.fill_rate >= 60 ? "var(--gold)" :
+                          s.fill_rate >= 30 ? "var(--accent-green)" :
+                          "var(--surface-border)";
+
+                        return (
+                          <div
+                            key={s.id}
+                            className="absolute top-1.5 bottom-1.5 rounded-md overflow-hidden cursor-default group"
+                            style={{
+                              left: `${left}%`,
+                              width: `${width}%`,
+                              background: "var(--surface)",
+                              border: `1px solid ${fillColor}`,
+                              minWidth: "2px",
+                            }}
+                            title={`${s.movie_name}\n${s.start_time}–${s.end_time}\n${s.seats_available}/${s.seat_count} seats (${s.fill_rate}% full)\n$${s.ticket_price.toFixed(2)}`}
+                          >
+                            {/* Fill indicator bar at bottom */}
+                            <div
+                              className="absolute bottom-0 left-0 h-1"
+                              style={{ width: `${s.fill_rate}%`, background: fillColor }}
+                            />
+                            {/* Movie name (only if block is wide enough) */}
+                            {width > 4 && (
+                              <div className="px-1.5 py-1 truncate">
+                                <span className="text-[10px] font-medium" style={{ color: "var(--text-primary)" }}>
+                                  {s.movie_name}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {/* Empty state */}
+                      {t.shows.length === 0 && (
+                        <div className="flex h-full items-center justify-center">
+                          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                            No showings
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
-        </div>
-      )}
+
+            {/* Legend */}
+            <div className="flex items-center justify-center gap-6 text-[11px]" style={{ color: "var(--text-muted)" }}>
+              <div className="flex items-center gap-1.5">
+                <div className="h-2 w-2 rounded-full" style={{ background: "var(--surface-border)" }} />
+                <span>&lt;30% full</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="h-2 w-2 rounded-full" style={{ background: "var(--accent-green)" }} />
+                <span>30-60%</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="h-2 w-2 rounded-full" style={{ background: "var(--gold)" }} />
+                <span>60-90%</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="h-2 w-2 rounded-full" style={{ background: "var(--accent-red)" }} />
+                <span>90%+</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="h-2.5 w-0.5 rounded-full" style={{ background: "var(--accent-red)" }} />
+                <span>Now</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Movies ──────────────────────────────────────── */}
       {subTab === "movies" && (
