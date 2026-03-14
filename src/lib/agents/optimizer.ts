@@ -20,7 +20,7 @@ export async function runOptimizer(simTime: string): Promise<AgentResult> {
 
   try {
     await generateText({
-      model: anthropic("claude-opus-4-6"),
+      model: anthropic("claude-sonnet-4-6"),
       stopWhen: stepCountIs(4),
       system: `You are the Optimizer Agent for StarLight Cinemas. Your job is to maximize theater utilization and revenue.
 

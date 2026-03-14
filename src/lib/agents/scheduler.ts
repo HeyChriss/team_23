@@ -20,7 +20,7 @@ export async function runScheduler(simTime: string): Promise<AgentResult> {
 
   try {
     await generateText({
-      model: anthropic("claude-opus-4-6"),
+      model: anthropic("claude-sonnet-4-6"),
       stopWhen: stepCountIs(3),
       system: `You are the Scheduler Agent for StarLight Cinemas. You manage the movie schedule.
 
