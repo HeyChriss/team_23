@@ -4,8 +4,9 @@ import { useChat } from "@ai-sdk/react";
 import { useState } from "react";
 import Dashboard from "@/components/Dashboard";
 import CuratorPanel from "@/components/CuratorPanel";
+import TimeControl from "@/components/TimeControl";
 
-type Tab = "chat" | "dashboard" | "curator";
+type Tab = "chat" | "dashboard" | "curator" | "time";
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("chat");
@@ -39,6 +40,7 @@ export default function Home() {
               { key: "chat", label: "Chat" },
               { key: "dashboard", label: "Dashboard" },
               { key: "curator", label: "Curator" },
+              { key: "time", label: "Time" },
             ] as { key: Tab; label: string }[]).map(({ key, label }) => (
               <button
                 key={key}
@@ -63,6 +65,13 @@ export default function Home() {
       {tab === "curator" && (
         <main className="flex-1 overflow-y-auto">
           <CuratorPanel />
+        </main>
+      )}
+
+      {/* ── Time Tab ─────────────────────────────────────────────────────── */}
+      {tab === "time" && (
+        <main className="flex-1 overflow-y-auto">
+          <TimeControl />
         </main>
       )}
 
