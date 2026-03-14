@@ -216,6 +216,130 @@ function FillButton({ showtimeId, seatsAvailable, onUpdate }: {
   );
 }
 
+function GuideBlock({ showtime: s, left, width, onUpdate }: {
+  showtime: ShowtimeStatus;
+  left: number;
+  width: number;
+  onUpdate: () => void;
+}) {
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mousePos = useRef({ x: 0, y: 0 });
+  const localSeats = useRef(s.seats_available);
+  const [localFill, setLocalFill] = useState(s.fill_rate);
+  const [filling, setFilling] = useState(false);
+  const [particles, setParticles] = useState<{ id: number; x: number; y: number; dx: number; emoji: string }[]>([]);
+  const nextId = useRef(0);
+
+  const TICKET_EMOJIS = ["🎟️", "🎫", "🎬", "🍿"];
+
+  useEffect(() => {
+    localSeats.current = s.seats_available;
+    setLocalFill(s.fill_rate);
+  }, [s.seats_available, s.fill_rate]);
+
+  const spawnParticle = useCallback(() => {
+    const id = nextId.current++;
+    const dx = Math.random() * 50 - 25;
+    const emoji = TICKET_EMOJIS[Math.floor(Math.random() * TICKET_EMOJIS.length)];
+    setParticles((prev) => [...prev, { id, x: mousePos.current.x, y: mousePos.current.y, dx, emoji }]);
+    setTimeout(() => {
+      setParticles((prev) => prev.filter((p) => p.id !== id));
+    }, 800);
+  }, []);
+
+  const stopFilling = useCallback(() => {
+    setFilling(false);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    onUpdate();
+  }, [onUpdate]);
+
+  const doBook = useCallback(() => {
+    if (localSeats.current <= 0) {
+      stopFilling();
+      return;
+    }
+    localSeats.current = Math.max(0, localSeats.current - 5);
+    setLocalFill(Math.round(((s.seat_count - localSeats.current) / s.seat_count) * 1000) / 10);
+    spawnParticle();
+    fetch("/api/theater-state/book", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ showtimeId: s.id, tickets: 5 }),
+    });
+  }, [s.id, s.seat_count, stopFilling, spawnParticle]);
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    mousePos.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
+  const startFilling = () => {
+    if (localSeats.current <= 0) return;
+    setFilling(true);
+    doBook();
+    intervalRef.current = setInterval(doBook, 200);
+  };
+
+  const fillColor =
+    localFill >= 90 ? "var(--accent-red)" :
+    localFill >= 60 ? "var(--gold)" :
+    localFill >= 30 ? "var(--accent-green)" :
+    "var(--surface-border)";
+
+  return (
+    <div
+      ref={containerRef}
+      onMouseEnter={startFilling}
+      onMouseLeave={stopFilling}
+      onMouseMove={handleMouseMove}
+      className={`absolute top-1.5 bottom-1.5 rounded-md overflow-visible cursor-pointer transition-all ${filling ? "ring-1 ring-[#5bd97b] scale-[1.02] z-10" : ""}`}
+      style={{
+        left: `${left}%`,
+        width: `${width}%`,
+        background: "var(--surface)",
+        border: `1px solid ${fillColor}`,
+        minWidth: "2px",
+      }}
+      title={`${s.movie_name}\n${s.start_time}–${s.end_time}\n${localSeats.current}/${s.seat_count} seats (${Math.round(localFill)}% full)\n$${s.ticket_price.toFixed(2)}\nHover to sell tickets`}
+    >
+      {/* Particles flying from cursor */}
+      {particles.map((p) => (
+        <span
+          key={p.id}
+          className="pointer-events-none absolute text-sm"
+          style={{
+            left: `${p.x}px`,
+            top: `${p.y}px`,
+            animation: "ticketFloat 0.8s ease-out forwards",
+            transform: `translateX(${p.dx}px)`,
+            zIndex: 50,
+          }}
+        >
+          {p.emoji}
+        </span>
+      ))}
+      <div className="absolute inset-0 rounded-md overflow-hidden">
+        <div
+          className="absolute bottom-0 left-0 h-1 transition-all duration-200"
+          style={{ width: `${localFill}%`, background: fillColor }}
+        />
+        {width > 4 && (
+          <div className="px-1.5 py-1 truncate">
+            <span className="text-[10px] font-medium" style={{ color: "var(--text-primary)" }}>
+              {s.movie_name}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [state, setState] = useState<FullState | null>(null);
   const [showtimes, setShowtimes] = useState<ShowtimeStatus[]>([]);
@@ -568,39 +692,14 @@ export default function Dashboard() {
                         const width = right - left;
                         if (width <= 0) return null;
 
-                        const fillColor =
-                          s.fill_rate >= 90 ? "var(--accent-red)" :
-                          s.fill_rate >= 60 ? "var(--gold)" :
-                          s.fill_rate >= 30 ? "var(--accent-green)" :
-                          "var(--surface-border)";
-
                         return (
-                          <div
+                          <GuideBlock
                             key={s.id}
-                            className="absolute top-1.5 bottom-1.5 rounded-md overflow-hidden cursor-default group"
-                            style={{
-                              left: `${left}%`,
-                              width: `${width}%`,
-                              background: "var(--surface)",
-                              border: `1px solid ${fillColor}`,
-                              minWidth: "2px",
-                            }}
-                            title={`${s.movie_name}\n${s.start_time}–${s.end_time}\n${s.seats_available}/${s.seat_count} seats (${s.fill_rate}% full)\n$${s.ticket_price.toFixed(2)}`}
-                          >
-                            {/* Fill indicator bar at bottom */}
-                            <div
-                              className="absolute bottom-0 left-0 h-1"
-                              style={{ width: `${s.fill_rate}%`, background: fillColor }}
-                            />
-                            {/* Movie name (only if block is wide enough) */}
-                            {width > 4 && (
-                              <div className="px-1.5 py-1 truncate">
-                                <span className="text-[10px] font-medium" style={{ color: "var(--text-primary)" }}>
-                                  {s.movie_name}
-                                </span>
-                              </div>
-                            )}
-                          </div>
+                            showtime={s}
+                            left={left}
+                            width={width}
+                            onUpdate={fetchData}
+                          />
                         );
                       })}
 
