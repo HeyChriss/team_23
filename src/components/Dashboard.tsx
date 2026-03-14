@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 
 // ── Types (from TheaterStateController) ──────────────────────────────────────
 
@@ -117,6 +117,103 @@ const ALERT_STYLE: Record<string, string> = {
 
 function formatCurrency(n: number): string {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function FillButton({ showtimeId, seatsAvailable, onUpdate }: {
+  showtimeId: number;
+  seatsAvailable: number;
+  onUpdate: () => void;
+}) {
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const localSeats = useRef(seatsAvailable);
+  const [filling, setFilling] = useState(false);
+  const [isFull, setIsFull] = useState(seatsAvailable <= 0);
+  const [particles, setParticles] = useState<{ id: number; x: number; emoji: string }[]>([]);
+  const nextId = useRef(0);
+
+  // Sync when parent data refreshes
+  useEffect(() => {
+    localSeats.current = seatsAvailable;
+    setIsFull(seatsAvailable <= 0);
+  }, [seatsAvailable]);
+
+  const TICKET_EMOJIS = ["🎟️", "🎫", "🎬", "🍿"];
+
+  const spawnParticle = () => {
+    const id = nextId.current++;
+    const x = Math.random() * 60 - 30;
+    const emoji = TICKET_EMOJIS[Math.floor(Math.random() * TICKET_EMOJIS.length)];
+    setParticles((prev) => [...prev, { id, x, emoji }]);
+    setTimeout(() => {
+      setParticles((prev) => prev.filter((p) => p.id !== id));
+    }, 1000);
+  };
+
+  const stopFilling = useCallback(() => {
+    setFilling(false);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    onUpdate();
+  }, [onUpdate]);
+
+  const doBookAndAnimate = useCallback(() => {
+    if (localSeats.current <= 0) {
+      setIsFull(true);
+      stopFilling();
+      return;
+    }
+    localSeats.current = Math.max(0, localSeats.current - 5);
+    if (localSeats.current <= 0) setIsFull(true);
+    spawnParticle();
+    fetch("/api/theater-state/book", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ showtimeId, tickets: 5 }),
+    });
+  }, [showtimeId, stopFilling]);
+
+  const startFilling = () => {
+    if (localSeats.current <= 0) return;
+    setFilling(true);
+    doBookAndAnimate();
+    intervalRef.current = setInterval(doBookAndAnimate, 200);
+  };
+
+  return (
+    <div className="relative">
+      {/* Floating ticket particles */}
+      {particles.map((p) => (
+        <span
+          key={p.id}
+          className="pointer-events-none absolute text-sm"
+          style={{
+            left: "50%",
+            bottom: "100%",
+            animation: "ticketFloat 1s ease-out forwards",
+            transform: `translateX(${p.x}px)`,
+          }}
+        >
+          {p.emoji}
+        </span>
+      ))}
+      <button
+        onMouseEnter={startFilling}
+        onMouseLeave={stopFilling}
+        disabled={isFull}
+        className={`w-20 rounded-lg px-4 py-2 text-sm font-medium text-center transition-colors ${
+          isFull
+            ? "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+            : filling
+              ? "bg-green-600 text-white animate-pulse"
+              : "bg-zinc-700 text-zinc-300 hover:bg-green-600 hover:text-white"
+        }`}
+      >
+        {isFull ? "Full" : filling ? "Filling..." : "Fill"}
+      </button>
+    </div>
+  );
 }
 
 export default function Dashboard() {
@@ -511,6 +608,7 @@ export default function Dashboard() {
                   <th className="px-4 py-3">Seats</th>
                   <th className="px-4 py-3">Revenue</th>
                   <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800">
@@ -554,6 +652,13 @@ export default function Dashboard() {
                       >
                         {s.status}
                       </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <FillButton
+                        showtimeId={s.id}
+                        seatsAvailable={s.seats_available}
+                        onUpdate={fetchData}
+                      />
                     </td>
                   </tr>
                 ))}
