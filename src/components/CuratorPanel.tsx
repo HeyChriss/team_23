@@ -23,34 +23,43 @@ export default function CuratorPanel() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 px-6 py-6">
+    <div className="mx-auto max-w-4xl space-y-6 px-6 py-8">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="animate-fade-in flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold">Film Curator Agent</h2>
-          <p className="mt-1 text-sm text-zinc-400">
+          <h2 className="text-xl font-semibold" style={{ fontFamily: "'Playfair Display', serif", color: "var(--text-primary)" }}>
+            Film Curator Agent
+          </h2>
+          <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
             Curate the movie catalog — add new films, retire underperformers, balance genres
           </p>
         </div>
         <button
           onClick={runAutoRebalance}
           disabled={isLoading}
-          className="rounded-xl border border-amber-500/50 bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-400 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
+          className="rounded-lg px-5 py-2.5 text-sm font-semibold transition-all hover:translate-y-[-1px] disabled:opacity-40"
+          style={{
+            background: "var(--gold-glow)",
+            border: "1px solid rgba(212,168,83,0.35)",
+            color: "var(--gold)",
+          }}
         >
           Auto Rebalance
         </button>
       </div>
 
       {/* Chat area */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-        <div className="mb-4 max-h-96 space-y-3 overflow-y-auto">
+      <div className="animate-fade-in-delay-1 surface-card rounded-2xl p-5">
+        <div className="mb-5 max-h-[28rem] space-y-4 overflow-y-auto pr-1">
           {messages.length === 0 && (
-            <div className="py-12 text-center">
-              <p className="text-4xl">🎬</p>
-              <p className="mt-3 text-zinc-400">
+            <div className="py-14 text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-xl" style={{ background: "var(--gold-glow)", border: "1px solid rgba(212,168,83,0.15)" }}>
+                <span className="text-3xl">&#127916;</span>
+              </div>
+              <p style={{ color: "var(--text-secondary)" }}>
                 Ask the Curator to analyze the catalog, add movies, or retire underperformers.
               </p>
-              <div className="mt-4 flex flex-wrap justify-center gap-2">
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
                 {[
                   "What's the genre distribution?",
                   "Which movies are underperforming?",
@@ -60,7 +69,7 @@ export default function CuratorPanel() {
                   <button
                     key={s}
                     onClick={() => sendMessage({ text: s })}
-                    className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
+                    className="suggestion-chip"
                   >
                     {s}
                   </button>
@@ -72,13 +81,11 @@ export default function CuratorPanel() {
           {messages.map((message) => (
             <div
               key={message.id}
-              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+              className={`flex animate-fade-in ${message.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
                 className={`max-w-[90%] rounded-xl px-4 py-3 ${
-                  message.role === "user"
-                    ? "bg-blue-600/80 text-white"
-                    : "bg-zinc-800 text-zinc-100"
+                  message.role === "user" ? "msg-user" : "msg-bot"
                 }`}
               >
                 {message.parts.map((part, i) => {
@@ -86,7 +93,7 @@ export default function CuratorPanel() {
                     return (
                       <div
                         key={`${message.id}-${i}`}
-                        className="whitespace-pre-wrap text-sm"
+                        className="whitespace-pre-wrap text-sm leading-relaxed"
                       >
                         {part.text}
                       </div>
@@ -97,11 +104,15 @@ export default function CuratorPanel() {
                     return (
                       <div
                         key={`${message.id}-${i}`}
-                        className="my-1 rounded border border-zinc-600 bg-zinc-900/80 px-2 py-1 text-xs text-zinc-400"
+                        className="my-1.5 flex items-center gap-2 rounded-lg px-3 py-2 text-xs"
+                        style={{ background: "rgba(0,0,0,0.2)", color: "var(--text-secondary)" }}
                       >
-                        {toolPart.state === "output-available"
-                          ? `✓ ${toolPart.type.replace("tool-", "")}`
-                          : `⟳ ${toolPart.type.replace("tool-", "")}...`}
+                        <span className={toolPart.state === "output-available" ? "gold-text" : "animate-pulse"}>
+                          {toolPart.state === "output-available" ? "&#10003;" : "&#9696;"}
+                        </span>
+                        <span className="font-mono">
+                          {toolPart.type.replace("tool-", "")}
+                        </span>
                       </div>
                     );
                   }
@@ -112,9 +123,14 @@ export default function CuratorPanel() {
           ))}
 
           {isLoading && (
-            <div className="flex justify-start">
-              <div className="rounded-xl bg-zinc-800 px-4 py-3 text-sm text-zinc-400">
-                <span className="animate-pulse">Curator thinking...</span>
+            <div className="flex animate-fade-in justify-start">
+              <div className="msg-bot rounded-xl px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-2 w-2 animate-pulse rounded-full" style={{ background: "var(--gold)" }} />
+                  <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                    Curator thinking...
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -129,18 +145,18 @@ export default function CuratorPanel() {
               setInput("");
             }
           }}
-          className="flex gap-2"
+          className="flex gap-3"
         >
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask the Curator to add movies, retire flops, or analyze the catalog..."
-            className="flex-1 rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2.5 text-sm text-white placeholder-zinc-500 outline-none focus:border-amber-500"
+            className="cinema-input flex-1 rounded-xl px-4 py-3 text-sm"
           />
           <button
             type="submit"
             disabled={isLoading || !input.trim()}
-            className="rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-amber-500 disabled:opacity-50"
+            className="btn-send"
           >
             Send
           </button>

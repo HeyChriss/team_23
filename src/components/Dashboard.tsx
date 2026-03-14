@@ -102,17 +102,17 @@ interface FullState {
 type SubTab = "overview" | "theaters" | "movies" | "schedule" | "alerts";
 
 const STATUS_BADGE: Record<string, string> = {
-  scheduled: "bg-zinc-700 text-zinc-300",
-  selling: "bg-blue-600/20 text-blue-400",
-  sold_out: "bg-red-600/20 text-red-400",
-  cancelled: "bg-yellow-600/20 text-yellow-400",
-  completed: "bg-green-600/20 text-green-400",
+  scheduled: "bg-[#2a2a30] text-[#8a8880]",
+  selling: "bg-[#1a2a3a] text-[#5b8fd9]",
+  sold_out: "bg-[#3a1a1a] text-[#d95b5b]",
+  cancelled: "bg-[#3a2a1a] text-[#d4a853]",
+  completed: "bg-[#1a3a1a] text-[#5bd97b]",
 };
 
 const ALERT_STYLE: Record<string, string> = {
-  info: "border-blue-500/30 bg-blue-600/10 text-blue-300",
-  warning: "border-yellow-500/30 bg-yellow-600/10 text-yellow-300",
-  critical: "border-red-500/30 bg-red-600/10 text-red-300",
+  info: "border-[#5b8fd9]/30 bg-[#5b8fd9]/10 text-[#5b8fd9]",
+  warning: "border-[#d4a853]/30 bg-[#d4a853]/10 text-[#d4a853]",
+  critical: "border-[#d95b5b]/30 bg-[#d95b5b]/10 text-[#d95b5b]",
 };
 
 function formatCurrency(n: number): string {
@@ -202,12 +202,12 @@ function FillButton({ showtimeId, seatsAvailable, onUpdate }: {
         onMouseEnter={startFilling}
         onMouseLeave={stopFilling}
         disabled={isFull}
-        className={`w-20 rounded-lg px-4 py-2 text-sm font-medium text-center transition-colors ${
+        className={`w-20 rounded-lg px-4 py-2 text-sm font-medium text-center transition-all ${
           isFull
-            ? "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+            ? "bg-[#19191d] text-[#3a3a40] cursor-not-allowed"
             : filling
-              ? "bg-green-600 text-white animate-pulse"
-              : "bg-zinc-700 text-zinc-300 hover:bg-green-600 hover:text-white"
+              ? "bg-[#5bd97b] text-[#0a0a0a] animate-pulse"
+              : "bg-[#2a2a30] text-[#8a8880] hover:bg-[#5bd97b] hover:text-[#0a0a0a]"
         }`}
       >
         {isFull ? "Full" : filling ? "Filling..." : "Fill"}
@@ -255,7 +255,7 @@ export default function Dashboard() {
   if (loading || !state) {
     return (
       <div className="flex items-center justify-center py-32">
-        <span className="animate-pulse text-zinc-400 text-lg">
+        <span className="animate-pulse text-[#8a8880] text-lg">
           Loading theater state...
         </span>
       </div>
@@ -280,10 +280,10 @@ export default function Dashboard() {
   return (
     <div className="mx-auto max-w-6xl px-6 py-6">
       {/* Sim time indicator */}
-      <div className="mb-4 flex items-center justify-between">
-        <div className="text-xs text-zinc-500">
+      <div className="mb-5 flex items-center justify-between animate-fade-in">
+        <div className="text-xs" style={{ color: "var(--text-muted)" }}>
           Simulation Time:{" "}
-          <span className="text-zinc-300">
+          <span style={{ color: "var(--text-secondary)" }}>
             {new Date(state.simTime).toLocaleString("en-US", {
               weekday: "short",
               month: "short",
@@ -296,7 +296,8 @@ export default function Dashboard() {
         {state.alerts.length > 0 && (
           <button
             onClick={() => setSubTab("alerts")}
-            className="rounded-full bg-yellow-600/20 px-3 py-1 text-xs text-yellow-400"
+            className="rounded-full px-3 py-1 text-xs font-medium"
+            style={{ background: "var(--gold-glow)", color: "var(--gold)", border: "1px solid rgba(212,168,83,0.25)" }}
           >
             {state.alerts.length} alert{state.alerts.length !== 1 ? "s" : ""}
           </button>
@@ -304,7 +305,7 @@ export default function Dashboard() {
       </div>
 
       {/* Sub-tabs */}
-      <div className="mb-6 flex gap-1 rounded-lg bg-zinc-900 p-1">
+      <div className="mb-6 flex gap-1 rounded-lg p-1" style={{ background: "var(--surface)" }}>
         {(
           [
             ["overview", "Overview"],
@@ -317,11 +318,7 @@ export default function Dashboard() {
           <button
             key={key}
             onClick={() => setSubTab(key)}
-            className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              subTab === key
-                ? "bg-zinc-700 text-white"
-                : "text-zinc-400 hover:text-zinc-200"
-            }`}
+            className={`tab-pill flex-1 ${subTab === key ? "active" : ""}`}
           >
             {label}
           </button>
@@ -341,39 +338,39 @@ export default function Dashboard() {
             ].map((card) => (
               <div
                 key={card.label}
-                className="rounded-xl border border-zinc-800 bg-zinc-900 p-5"
+                className="surface-card rounded-xl p-5"
               >
-                <p className="text-sm text-zinc-400">{card.label}</p>
+                <p className="text-sm text-[#8a8880]">{card.label}</p>
                 <p className="mt-1 text-3xl font-bold">{card.value}</p>
-                <p className="mt-1 text-xs text-zinc-500">{card.sub}</p>
+                <p className="mt-1 text-xs text-[#5a5850]">{card.sub}</p>
               </div>
             ))}
           </div>
 
           {/* Promo stats */}
           <div className="grid grid-cols-3 gap-4">
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-              <p className="text-sm text-zinc-400">Active Promos</p>
+            <div className="surface-card rounded-xl p-5">
+              <p className="text-sm text-[#8a8880]">Active Promos</p>
               <p className="mt-1 text-3xl font-bold">{kpis.total_promos_active}</p>
             </div>
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-              <p className="text-sm text-zinc-400">Promo Redemptions</p>
+            <div className="surface-card rounded-xl p-5">
+              <p className="text-sm text-[#8a8880]">Promo Redemptions</p>
               <p className="mt-1 text-3xl font-bold">{kpis.total_promo_redemptions}</p>
             </div>
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-              <p className="text-sm text-zinc-400">Discounts Given</p>
+            <div className="surface-card rounded-xl p-5">
+              <p className="text-sm text-[#8a8880]">Discounts Given</p>
               <p className="mt-1 text-3xl font-bold">{formatCurrency(kpis.total_discount_given)}</p>
             </div>
           </div>
 
           {/* Genre trends */}
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-zinc-400">
+          <div className="surface-card rounded-xl p-5">
+            <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.15em] text-[#d4a853]">
               Genre Performance
             </h3>
-            <div className="overflow-hidden rounded-lg border border-zinc-800">
+            <div className="overflow-hidden rounded-lg border border-[#2a2a30]">
               <table className="w-full text-left text-sm">
-                <thead className="bg-zinc-900 text-xs uppercase text-zinc-500">
+                <thead className="bg-[#111113] text-xs uppercase text-zinc-500">
                   <tr>
                     <th className="px-4 py-2">Genre</th>
                     <th className="px-4 py-2">Shows</th>
@@ -386,9 +383,9 @@ export default function Dashboard() {
                   {state.genreTrends.map((g) => (
                     <tr key={g.category} className="hover:bg-zinc-800/50">
                       <td className="px-4 py-2 font-medium">{g.category}</td>
-                      <td className="px-4 py-2 text-zinc-400">{g.total_showtimes}</td>
-                      <td className="px-4 py-2 text-zinc-400">{g.total_tickets}</td>
-                      <td className="px-4 py-2 text-zinc-300">{formatCurrency(g.total_revenue)}</td>
+                      <td className="px-4 py-2 text-[#8a8880]">{g.total_showtimes}</td>
+                      <td className="px-4 py-2 text-[#8a8880]">{g.total_tickets}</td>
+                      <td className="px-4 py-2 text-[#f0eee6]">{formatCurrency(g.total_revenue)}</td>
                       <td className="px-4 py-2">
                         <div className="flex items-center gap-2">
                           <div className="h-1.5 w-12 overflow-hidden rounded-full bg-zinc-800">
@@ -397,7 +394,7 @@ export default function Dashboard() {
                               style={{ width: `${Math.min(g.avg_fill_rate, 100)}%` }}
                             />
                           </div>
-                          <span className="text-xs text-zinc-400">{g.avg_fill_rate}%</span>
+                          <span className="text-xs text-[#8a8880]">{g.avg_fill_rate}%</span>
                         </div>
                       </td>
                     </tr>
@@ -408,8 +405,8 @@ export default function Dashboard() {
           </div>
 
           {/* Daily revenue chart */}
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-5">
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-zinc-400">
+          <div className="surface-card rounded-xl p-5">
+            <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.15em] text-[#d4a853]">
               Daily Performance
             </h3>
             <div className="flex items-end gap-2">
@@ -421,14 +418,14 @@ export default function Dashboard() {
                     key={d.date}
                     className="flex flex-1 flex-col items-center gap-1"
                   >
-                    <span className="text-xs text-zinc-300">
+                    <span className="text-xs text-[#f0eee6]">
                       {formatCurrency(d.revenue)}
                     </span>
                     <div
-                      className="w-full rounded-t bg-blue-600"
-                      style={{ height: `${Math.max(height, 4)}px` }}
+                      className="w-full rounded-t"
+                      style={{ background: "var(--gold)", height: `${Math.max(height, 4)}px` }}
                     />
-                    <span className="text-xs text-zinc-500">
+                    <span className="text-xs text-[#5a5850]">
                       {new Date(d.date + "T12:00:00").toLocaleDateString(
                         "en-US",
                         { weekday: "short", month: "short", day: "numeric" }
@@ -451,7 +448,7 @@ export default function Dashboard() {
           {state.theaters.map((t) => (
             <div
               key={t.id}
-              className="rounded-xl border border-zinc-800 bg-zinc-900 p-5"
+              className="surface-card rounded-xl p-5"
             >
               <div className="flex items-start justify-between">
                 <h3 className="text-lg font-semibold">{t.name}</h3>
@@ -464,17 +461,17 @@ export default function Dashboard() {
               <div className="mt-4 grid grid-cols-3 gap-3 text-center">
                 <div>
                   <p className="text-2xl font-bold">{t.seat_count}</p>
-                  <p className="text-xs text-zinc-500">Seats</p>
+                  <p className="text-xs text-[#5a5850]">Seats</p>
                 </div>
                 <div>
                   <p className="text-2xl font-bold">{t.total_showtimes}</p>
-                  <p className="text-xs text-zinc-500">Showings</p>
+                  <p className="text-xs text-[#5a5850]">Showings</p>
                 </div>
                 <div>
                   <p className={`text-2xl font-bold ${t.fill_rate > 60 ? "text-green-400" : t.fill_rate > 30 ? "text-yellow-400" : "text-red-400"}`}>
                     {t.fill_rate}%
                   </p>
-                  <p className="text-xs text-zinc-500">Fill Rate</p>
+                  <p className="text-xs text-[#5a5850]">Fill Rate</p>
                 </div>
               </div>
               <div className="mt-3">
@@ -500,11 +497,11 @@ export default function Dashboard() {
             value={movieSearch}
             onChange={(e) => setMovieSearch(e.target.value)}
             placeholder="Search movies by title, genre, or director..."
-            className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-white placeholder-zinc-500 outline-none focus:border-blue-500"
+            className="cinema-input w-full rounded-xl px-4 py-3"
           />
-          <div className="overflow-hidden rounded-xl border border-zinc-800">
+          <div className="overflow-hidden rounded-xl border border-[#2a2a30]">
             <table className="w-full text-left text-sm">
-              <thead className="bg-zinc-900 text-xs uppercase text-zinc-400">
+              <thead className="bg-[#111113] text-xs uppercase text-[#8a8880]">
                 <tr>
                   <th className="px-4 py-3">Title</th>
                   <th className="px-4 py-3">Genre</th>
@@ -519,7 +516,7 @@ export default function Dashboard() {
                 {filteredMovies.map((m) => (
                   <tr
                     key={m.id}
-                    className="bg-zinc-950 transition-colors hover:bg-zinc-900"
+                    className="bg-[#0a0a0c] transition-colors hover:bg-[#19191d]"
                   >
                     <td className="px-4 py-3 font-medium">{m.name}</td>
                     <td className="px-4 py-3">
@@ -527,10 +524,10 @@ export default function Dashboard() {
                         {m.category}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-zinc-400">{m.director}</td>
-                    <td className="px-4 py-3 text-zinc-400">{m.total_showtimes}</td>
-                    <td className="px-4 py-3 text-zinc-400">{m.total_tickets}</td>
-                    <td className="px-4 py-3 text-zinc-300">
+                    <td className="px-4 py-3 text-[#8a8880]">{m.director}</td>
+                    <td className="px-4 py-3 text-[#8a8880]">{m.total_showtimes}</td>
+                    <td className="px-4 py-3 text-[#8a8880]">{m.total_tickets}</td>
+                    <td className="px-4 py-3 text-[#f0eee6]">
                       {formatCurrency(m.total_revenue)}
                     </td>
                     <td className="px-4 py-3">
@@ -541,7 +538,7 @@ export default function Dashboard() {
                             style={{ width: `${Math.min(m.avg_fill_rate, 100)}%` }}
                           />
                         </div>
-                        <span className="text-xs text-zinc-400">{m.avg_fill_rate}%</span>
+                        <span className="text-xs text-[#8a8880]">{m.avg_fill_rate}%</span>
                       </div>
                     </td>
                   </tr>
@@ -549,7 +546,7 @@ export default function Dashboard() {
               </tbody>
             </table>
           </div>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-[#5a5850]">
             Showing {filteredMovies.length} of {movies.length} movies
           </p>
         </div>
@@ -560,15 +557,13 @@ export default function Dashboard() {
         <div className="space-y-4">
           {/* Filters */}
           <div className="flex flex-wrap gap-3">
-            <div className="flex gap-1 rounded-lg bg-zinc-900 p-1">
+            <div className="flex gap-1 rounded-lg bg-[#111113] p-1">
               {state.dailySnapshots.map((d) => (
                 <button
                   key={d.date}
                   onClick={() => setSelectedDate(d.date)}
-                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                    selectedDate === d.date
-                      ? "bg-blue-600 text-white"
-                      : "text-zinc-400 hover:text-zinc-200"
+                  className={`tab-pill ${
+                    selectedDate === d.date ? "active" : ""
                   }`}
                 >
                   {new Date(d.date + "T12:00:00").toLocaleDateString(
@@ -585,7 +580,7 @@ export default function Dashboard() {
                   e.target.value ? Number(e.target.value) : null
                 )
               }
-              className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white outline-none"
+              className="cinema-input rounded-lg px-3 py-2 text-sm"
             >
               <option value="">All Theaters</option>
               {state.theaters.map((t) => (
@@ -597,9 +592,9 @@ export default function Dashboard() {
           </div>
 
           {/* Schedule grid */}
-          <div className="overflow-hidden rounded-xl border border-zinc-800">
+          <div className="overflow-hidden rounded-xl border border-[#2a2a30]">
             <table className="w-full text-left text-sm">
-              <thead className="bg-zinc-900 text-xs uppercase text-zinc-400">
+              <thead className="bg-[#111113] text-xs uppercase text-[#8a8880]">
                 <tr>
                   <th className="px-4 py-3">Time</th>
                   <th className="px-4 py-3">Movie</th>
@@ -615,19 +610,19 @@ export default function Dashboard() {
                 {filteredShowtimes.map((s) => (
                   <tr
                     key={s.id}
-                    className="bg-zinc-950 transition-colors hover:bg-zinc-900"
+                    className="bg-[#0a0a0c] transition-colors hover:bg-[#19191d]"
                   >
-                    <td className="px-4 py-3 font-mono text-zinc-300">
+                    <td className="px-4 py-3 font-mono text-[#f0eee6]">
                       {s.start_time} — {s.end_time}
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-medium">{s.movie_name}</div>
-                      <div className="text-xs text-zinc-500">{s.category}</div>
+                      <div className="text-xs text-[#5a5850]">{s.category}</div>
                     </td>
-                    <td className="px-4 py-3 text-zinc-400">
+                    <td className="px-4 py-3 text-[#8a8880]">
                       {s.theater_name}
                     </td>
-                    <td className="px-4 py-3 text-zinc-300">
+                    <td className="px-4 py-3 text-[#f0eee6]">
                       ${s.ticket_price.toFixed(2)}
                     </td>
                     <td className="px-4 py-3">
@@ -638,12 +633,12 @@ export default function Dashboard() {
                             style={{ width: `${s.fill_rate}%` }}
                           />
                         </div>
-                        <span className="text-xs text-zinc-400">
+                        <span className="text-xs text-[#8a8880]">
                           {s.seats_available}/{s.seat_count}
                         </span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-zinc-300 text-xs">
+                    <td className="px-4 py-3 text-[#f0eee6] text-xs">
                       {formatCurrency(s.revenue)}
                     </td>
                     <td className="px-4 py-3">
@@ -665,7 +660,7 @@ export default function Dashboard() {
               </tbody>
             </table>
           </div>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-[#5a5850]">
             {filteredShowtimes.length} showtime
             {filteredShowtimes.length !== 1 ? "s" : ""}
           </p>

@@ -14,97 +14,86 @@ export default function Home() {
   const isLoading = status === "streaming" || status === "submitted";
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-950 text-white">
-      {/* Header */}
-      <header className="border-b border-zinc-800 px-6 py-4">
+    <div className="flex min-h-screen flex-col" style={{ background: "#08080a" }}>
+      {/* ── Header ────────────────────────────────────────────────────────── */}
+      <header className="header-bg px-6 py-4">
         <div className="mx-auto flex max-w-6xl items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🎬</span>
+          {/* Logo */}
+          <div className="flex items-center gap-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg gold-glow" style={{ background: "var(--gold-glow)", border: "1px solid rgba(212,168,83,0.3)" }}>
+              <span className="text-lg">&#9733;</span>
+            </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight">
-                StarLight Cinemas
+              <h1 className="text-lg font-semibold tracking-wide gold-text" style={{ fontFamily: "'Playfair Display', serif" }}>
+                STARLIGHT CINEMAS
               </h1>
-              <p className="text-sm text-zinc-400">
-                AI-Powered Movie Theater Experience
+              <p className="text-xs tracking-widest uppercase" style={{ color: "var(--text-muted)" }}>
+                AI-Powered Theater
               </p>
             </div>
           </div>
 
-          {/* Tab switcher */}
-          <div className="flex gap-1 rounded-lg bg-zinc-900 p-1">
-            <button
-              onClick={() => setTab("chat")}
-              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                tab === "chat"
-                  ? "bg-blue-600 text-white"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              Chat
-            </button>
-            <button
-              onClick={() => setTab("dashboard")}
-              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                tab === "dashboard"
-                  ? "bg-blue-600 text-white"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              Dashboard
-            </button>
-            <button
-              onClick={() => setTab("curator")}
-              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                tab === "curator"
-                  ? "bg-amber-600 text-white"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              Curator
-            </button>
-          </div>
+          {/* Tab navigation */}
+          <nav className="flex gap-1 rounded-lg p-1" style={{ background: "var(--surface)" }}>
+            {([
+              { key: "chat", label: "Chat" },
+              { key: "dashboard", label: "Dashboard" },
+              { key: "curator", label: "Curator" },
+            ] as { key: Tab; label: string }[]).map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                className={`tab-pill ${tab === key ? "active" : ""}`}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
         </div>
       </header>
 
-      {/* ── Dashboard Tab ──────────────────────────────── */}
+      {/* ── Dashboard Tab ─────────────────────────────────────────────────── */}
       {tab === "dashboard" && (
         <main className="flex-1 overflow-y-auto">
           <Dashboard />
         </main>
       )}
 
-      {/* ── Curator Tab ────────────────────────────────── */}
+      {/* ── Curator Tab ───────────────────────────────────────────────────── */}
       {tab === "curator" && (
         <main className="flex-1 overflow-y-auto">
           <CuratorPanel />
         </main>
       )}
 
-      {/* ── Chat Tab ───────────────────────────────────── */}
+      {/* ── Chat Tab ──────────────────────────────────────────────────────── */}
       {tab === "chat" && (
         <>
-          <main className="flex-1 overflow-y-auto px-6 py-6">
-            <div className="mx-auto max-w-3xl space-y-4">
+          <main className="flex-1 overflow-y-auto px-6 py-8">
+            <div className="mx-auto max-w-3xl space-y-5">
+              {/* Empty state */}
               {messages.length === 0 && (
-                <div className="py-20 text-center">
-                  <p className="text-5xl">🍿</p>
-                  <h2 className="mt-4 text-2xl font-semibold">
-                    Welcome to StarLight Cinemas
+                <div className="animate-fade-in py-24 text-center">
+                  <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl" style={{ background: "var(--gold-glow)", border: "1px solid rgba(212,168,83,0.2)" }}>
+                    <span className="text-4xl">&#127871;</span>
+                  </div>
+                  <h2 className="text-2xl font-semibold" style={{ fontFamily: "'Playfair Display', serif", color: "var(--text-primary)" }}>
+                    Welcome to StarLight
                   </h2>
-                  <p className="mt-2 text-zinc-400">
-                    Ask me about movies, showtimes, or book your tickets!
+                  <p className="mt-3 text-sm" style={{ color: "var(--text-secondary)" }}>
+                    Your personal cinema concierge. Ask about movies, showtimes, or book tickets.
                   </p>
-                  <div className="mt-6 flex flex-wrap justify-center gap-2">
+                  <div className="mt-8 flex flex-wrap justify-center gap-3">
                     {[
                       "What movies are showing today?",
                       "I'd like to book tickets",
                       "Show me the concession menu",
                       "Check my loyalty points",
-                    ].map((suggestion) => (
+                    ].map((suggestion, i) => (
                       <button
                         key={suggestion}
                         onClick={() => sendMessage({ text: suggestion })}
-                        className="rounded-full border border-zinc-700 px-4 py-2 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
+                        className={`suggestion-chip animate-fade-in-delay-${i + 1}`}
                       >
                         {suggestion}
                       </button>
@@ -113,18 +102,17 @@ export default function Home() {
                 </div>
               )}
 
+              {/* Messages */}
               {messages.map((message) => (
                 <div
                   key={message.id}
-                  className={`flex ${
+                  className={`flex animate-fade-in ${
                     message.role === "user" ? "justify-end" : "justify-start"
                   }`}
                 >
                   <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                      message.role === "user"
-                        ? "bg-blue-600 text-white"
-                        : "bg-zinc-800 text-zinc-100"
+                    className={`max-w-[80%] rounded-2xl px-5 py-3.5 ${
+                      message.role === "user" ? "msg-user" : "msg-bot"
                     }`}
                   >
                     {message.parts.map((part, i) => {
@@ -133,7 +121,7 @@ export default function Home() {
                           return (
                             <div
                               key={`${message.id}-${i}`}
-                              className="whitespace-pre-wrap"
+                              className="whitespace-pre-wrap text-sm leading-relaxed"
                             >
                               {part.text}
                             </div>
@@ -150,11 +138,15 @@ export default function Home() {
                             return (
                               <div
                                 key={`${message.id}-${i}`}
-                                className="my-1 rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-zinc-400"
+                                className="my-1.5 flex items-center gap-2 rounded-lg px-3 py-2 text-xs"
+                                style={{ background: "rgba(0,0,0,0.2)", color: "var(--text-secondary)" }}
                               >
-                                {toolPart.state === "output-available"
-                                  ? `Done: ${toolPart.type.replace("tool-", "")}`
-                                  : `Running: ${toolPart.type.replace("tool-", "")}...`}
+                                <span className={toolPart.state === "output-available" ? "gold-text" : "animate-pulse"}>
+                                  {toolPart.state === "output-available" ? "&#10003;" : "&#9696;"}
+                                </span>
+                                <span className="font-mono">
+                                  {toolPart.type.replace("tool-", "")}
+                                </span>
                               </div>
                             );
                           }
@@ -167,17 +159,22 @@ export default function Home() {
               ))}
 
               {isLoading && (
-                <div className="flex justify-start">
-                  <div className="rounded-2xl bg-zinc-800 px-4 py-3 text-zinc-400">
-                    <span className="animate-pulse">Thinking...</span>
+                <div className="flex animate-fade-in justify-start">
+                  <div className="msg-bot rounded-2xl px-5 py-3.5">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block h-2 w-2 animate-pulse rounded-full" style={{ background: "var(--gold)" }} />
+                      <span className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                        Thinking...
+                      </span>
+                    </div>
                   </div>
                 </div>
               )}
             </div>
           </main>
 
-          {/* Input */}
-          <footer className="border-t border-zinc-800 px-6 py-4">
+          {/* ── Input bar ─────────────────────────────────────────────────── */}
+          <footer className="px-6 py-5" style={{ borderTop: "1px solid var(--surface-border)" }}>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -192,12 +189,12 @@ export default function Home() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Ask about movies, book tickets, or order snacks..."
-                className="flex-1 rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-white placeholder-zinc-500 outline-none focus:border-blue-500"
+                className="cinema-input flex-1 rounded-xl px-5 py-3.5 text-sm"
               />
               <button
                 type="submit"
                 disabled={isLoading || !input.trim()}
-                className="rounded-xl bg-blue-600 px-6 py-3 font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+                className="btn-send"
               >
                 Send
               </button>
