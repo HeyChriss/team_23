@@ -47,6 +47,12 @@ export default function CustomersPanel() {
   const [lastResults, setLastResults] = useState<{ customerName: string; outcome: string; details: Record<string, unknown> }[]>([]);
   const [activeConversations, setActiveConversations] = useState<Map<string, "manager" | "promoter">>(new Map());
 
+  // Live conversation feed
+  interface LiveStep { step: string; message: string; ts: number }
+  interface LiveConv { agentType: "manager" | "promoter"; steps: LiveStep[]; outcome?: "booked" | "left" }
+  const [liveConversations, setLiveConversations] = useState<Map<string, LiveConv>>(new Map());
+  const feedRef = useRef<HTMLDivElement>(null);
+
   // Keep ref in sync
   useEffect(() => {
     bubblesRef.current = bubbles;
@@ -256,12 +262,26 @@ export default function CustomersPanel() {
 
       if (status === "active") {
         // Customer started talking to an agent — track the connection
-        setActiveConversations((prev) => new Map(prev).set(customerName, agentType || "manager"));
+        const agent = agentType || "manager";
+        setActiveConversations((prev) => new Map(prev).set(customerName, agent));
+        // Create live conversation entry
+        setLiveConversations((prev) => {
+          const next = new Map(prev);
+          next.set(customerName, { agentType: agent, steps: [], outcome: undefined });
+          return next;
+        });
       } else if (status === "booked" || status === "left") {
         // Conversation ended — remove tracking and exit bubble
         setActiveConversations((prev) => {
           const next = new Map(prev);
           next.delete(customerName);
+          return next;
+        });
+        // Update live conversation outcome
+        setLiveConversations((prev) => {
+          const next = new Map(prev);
+          const conv = next.get(customerName);
+          if (conv) next.set(customerName, { ...conv, outcome: status });
           return next;
         });
         const bubble = bubblesRef.current.find(
@@ -273,6 +293,36 @@ export default function CustomersPanel() {
     window.addEventListener("sim:customer-status", handler);
     return () => window.removeEventListener("sim:customer-status", handler);
   }, [exitBubble]);
+
+  // ── Listen for live conversation step updates ─────────────────────────────
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { customerName, step, message, data } = (e as CustomEvent).detail as {
+        customerName: string;
+        step: string;
+        message: string;
+        data?: Record<string, unknown>;
+      };
+      if (!customerName) return;
+
+      setLiveConversations((prev) => {
+        const next = new Map(prev);
+        const conv = next.get(customerName);
+        if (conv) {
+          next.set(customerName, {
+            ...conv,
+            steps: [...conv.steps, { step, message, ts: Date.now() }],
+          });
+        }
+        return next;
+      });
+
+      // Auto-scroll feed
+      setTimeout(() => feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" }), 50);
+    };
+    window.addEventListener("sim:conversation-update", handler);
+    return () => window.removeEventListener("sim:conversation-update", handler);
+  }, []);
 
   const filteredBubbles = bubbles.filter(
     (b) => filter === "all" || b.customer.customer_type === filter
@@ -617,98 +667,116 @@ export default function CustomersPanel() {
           </div>
         </div>
 
-        {/* ── Right: Promotions Agent ──────────────────────────────────────── */}
+        {/* ── Right: Live Conversation Feed ────────────────────────────────── */}
         <div className="w-1/2 relative">
           <div className="surface-card rounded-2xl p-5 h-full flex flex-col">
-            <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.15em]" style={{ color: "var(--gold)" }}>
-              Promotions Agent
-            </h3>
-
-            {/* Process controls */}
-            <div className="flex gap-2 mb-4">
-              <button
-                onClick={() => processCustomers(3)}
-                disabled={processing || filteredBubbles.filter((b) => b.state === "floating").length === 0}
-                className="flex-1 rounded-xl py-3 text-sm font-semibold transition-all hover:translate-y-[-1px] disabled:opacity-40"
-                style={{ background: "var(--gold)", color: "#0a0a0a" }}
-              >
-                {processing ? "Processing..." : "Process 3 Customers"}
-              </button>
-              <button
-                onClick={() => processCustomers(5)}
-                disabled={processing || filteredBubbles.filter((b) => b.state === "floating").length === 0}
-                className="flex-1 rounded-xl py-3 text-sm font-semibold transition-all hover:translate-y-[-1px] disabled:opacity-40"
-                style={{ background: "var(--surface)", border: "1px solid var(--surface-border)", color: "var(--text-secondary)" }}
-              >
-                {processing ? "..." : "Process 5"}
-              </button>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xs font-semibold uppercase tracking-[0.15em]" style={{ color: "var(--gold)" }}>
+                Live Agent Conversations
+              </h3>
+              {liveConversations.size > 0 && (
+                <span className="flex items-center gap-1.5 text-xs" style={{ color: "var(--accent-green)" }}>
+                  <span className="inline-block h-2 w-2 rounded-full animate-pulse" style={{ background: "var(--accent-green)" }} />
+                  {[...liveConversations.values()].filter((c) => !c.outcome).length} active
+                </span>
+              )}
             </div>
 
-            {processing && (
-              <div className="mb-4 flex items-center justify-center gap-2 py-4">
-                <div className="h-3 w-3 rounded-full animate-pulse" style={{ background: "var(--gold)" }} />
-                <span className="text-sm" style={{ color: "var(--gold)" }}>
-                  Customers are deciding...
-                </span>
-              </div>
-            )}
-
-            {/* Results feed */}
-            <div className="flex-1 overflow-y-auto space-y-2">
-              {lastResults.length === 0 && !processing && (
+            <div ref={feedRef} className="flex-1 overflow-y-auto space-y-3" style={{ maxHeight: "calc(100vh - 320px)" }}>
+              {liveConversations.size === 0 && (
                 <div className="flex flex-col items-center justify-center h-full text-center py-8">
                   <div
                     className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl"
                     style={{ background: "var(--gold-glow)", border: "1px solid rgba(212,168,83,0.2)" }}
                   >
-                    <span className="text-3xl">&#127915;</span>
+                    <span className="text-3xl">&#128172;</span>
                   </div>
                   <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-                    Process customers to see their decisions
+                    Start the simulation to see live conversations
                   </p>
                   <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
-                    Each customer sees current movies &amp; promos,<br />then decides to buy or leave
+                    Each customer&#39;s journey appears here in real-time
                   </p>
                 </div>
               )}
 
-              {lastResults.map((r, i) => {
-                const bought = r.outcome === "bought";
+              {[...liveConversations.entries()].reverse().map(([name, conv]) => {
+                const isActive = !conv.outcome;
+                const isBooked = conv.outcome === "booked";
                 return (
                   <div
-                    key={i}
-                    className="animate-fade-in rounded-lg p-3"
+                    key={name}
+                    className="animate-fade-in rounded-xl p-3"
                     style={{
-                      background: bought ? "rgba(91,217,123,0.08)" : "rgba(217,91,91,0.08)",
-                      border: `1px solid ${bought ? "rgba(91,217,123,0.2)" : "rgba(217,91,91,0.2)"}`,
+                      background: isActive
+                        ? "rgba(212,168,83,0.06)"
+                        : isBooked
+                          ? "rgba(91,217,123,0.06)"
+                          : "rgba(217,91,91,0.06)",
+                      border: `1px solid ${isActive ? "rgba(212,168,83,0.2)" : isBooked ? "rgba(91,217,123,0.2)" : "rgba(217,91,91,0.2)"}`,
                     }}
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                        {r.customerName}
-                      </span>
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold"
+                          style={{
+                            background: conv.agentType === "manager" ? "rgba(91,217,123,0.2)" : "rgba(212,168,83,0.2)",
+                            color: conv.agentType === "manager" ? "var(--accent-green)" : "var(--gold)",
+                          }}
+                        >
+                          {name.split(" ")[0][0]}
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>{name}</p>
+                          <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                            {conv.agentType === "manager" ? "Manager Agent" : "Promoter Agent"}
+                          </p>
+                        </div>
+                      </div>
                       <span
-                        className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                        className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase"
                         style={{
-                          color: bought ? "var(--accent-green)" : "var(--accent-red)",
-                          background: bought ? "rgba(91,217,123,0.15)" : "rgba(217,91,91,0.15)",
+                          color: isActive ? "var(--gold)" : isBooked ? "var(--accent-green)" : "var(--accent-red)",
+                          background: isActive ? "rgba(212,168,83,0.15)" : isBooked ? "rgba(91,217,123,0.15)" : "rgba(217,91,91,0.15)",
                         }}
                       >
-                        {bought ? "BOUGHT" : "LEFT"}
+                        {isActive ? "LIVE" : isBooked ? "BOOKED" : "LEFT"}
                       </span>
                     </div>
-                    <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                      {String((r.details as Record<string, unknown>)?.reasoning || "No reason given")}
-                    </p>
-                    {bought && !!(r.details as Record<string, unknown>)?.movie && (() => {
-                      const d = r.details as Record<string, unknown>;
-                      return (
-                        <p className="mt-1 text-xs" style={{ color: "var(--text-secondary)" }}>
-                          {String(d.movie)} &middot; {Number(d.tickets)} ticket{Number(d.tickets) > 1 ? "s" : ""} &middot; ${Number(d.totalPrice)?.toFixed(2)}
-                          {d.promoUsed ? <span style={{ color: "var(--gold)" }}> &middot; used {String(d.promoUsed)}</span> : null}
-                        </p>
-                      );
-                    })()}
+
+                    {/* Steps */}
+                    <div className="space-y-1.5 pl-2" style={{ borderLeft: `2px solid ${isActive ? "rgba(212,168,83,0.3)" : isBooked ? "rgba(91,217,123,0.2)" : "rgba(217,91,91,0.2)"}` }}>
+                      {conv.steps.map((s, i) => {
+                        const icon =
+                          s.step === "greeting" ? "\uD83D\uDDE3\uFE0F" :
+                          s.step === "browsing" ? "\uD83D\uDD0D" :
+                          s.step === "checking" ? "\uD83D\uDCCB" :
+                          s.step === "booking" ? "\uD83C\uDFAB" :
+                          s.step === "booked" ? "\u2705" :
+                          s.step === "response" ? "\uD83D\uDCAC" :
+                          s.step === "left" ? "\uD83D\uDEB6" : "\u2022";
+                        return (
+                          <div key={i} className="flex items-start gap-2 animate-fade-in">
+                            <span className="text-xs mt-0.5 shrink-0">{icon}</span>
+                            <p className="text-xs leading-relaxed" style={{
+                              color: s.step === "booked" ? "var(--accent-green)" :
+                                     s.step === "left" ? "var(--accent-red)" :
+                                     "var(--text-secondary)",
+                            }}>
+                              {s.message}
+                            </p>
+                          </div>
+                        );
+                      })}
+                      {isActive && conv.steps.length > 0 && (
+                        <div className="flex items-center gap-2">
+                          <span className="inline-block h-1.5 w-1.5 rounded-full animate-pulse" style={{ background: "var(--gold)" }} />
+                          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>thinking...</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })}

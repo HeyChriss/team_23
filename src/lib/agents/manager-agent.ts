@@ -11,11 +11,12 @@ import { getDb } from "@/lib/db";
 import { getSimulationClock } from "@/lib/simulation-clock";
 import { withWriteLock } from "@/lib/write-queue";
 import { insertEvent } from "@/lib/event-store";
-import type { CustomerPersonality, ConversationEntry } from "./types";
+import type { CustomerPersonality, ConversationEntry, ConversationUpdate } from "./types";
 
 export async function runManagerConversation(
   customer: CustomerPersonality,
-  simTime: string
+  simTime: string,
+  onProgress?: (update: ConversationUpdate) => void
 ): Promise<ConversationEntry> {
   const db = getDb();
   const clock = getSimulationClock();
@@ -56,6 +57,13 @@ Talk to the theater manager to find a movie and book tickets. Be conversational 
 If nothing appeals to you or everything is sold out or too expensive, politely leave.
 The current time is ${currentTime} on ${today}.`;
 
+  // Emit greeting
+  onProgress?.({
+    customerName: customer.name,
+    step: "greeting",
+    message: `Hi! I'm looking for ${customer.favoriteGenres.join(" or ")} movies for ${customer.groupSize} ${customer.groupSize > 1 ? "people" : "person"}.`,
+  });
+
   try {
     const result = await generateText({
       model: anthropic("claude-haiku-4-5-20251001"),
@@ -73,6 +81,11 @@ Always try to make a sale, but respect the customer's preferences.`,
             category: z.string().optional(),
           }),
           execute: async ({ category }) => {
+            onProgress?.({
+              customerName: customer.name,
+              step: "browsing",
+              message: category ? `Browsing ${category} movies...` : "Browsing what's showing...",
+            });
             let query = `
               SELECT DISTINCT m.id, m.name, m.category, m.length_minutes, m.director
               FROM movies m
@@ -95,6 +108,11 @@ Always try to make a sale, but respect the customer's preferences.`,
             movieId: z.number(),
           }),
           execute: async ({ movieId }) => {
+            onProgress?.({
+              customerName: customer.name,
+              step: "checking",
+              message: "Checking available showtimes...",
+            });
             return db
               .prepare(
                 `SELECT s.id AS showtime_id, s.start_time, s.end_time, s.ticket_price,
@@ -117,6 +135,11 @@ Always try to make a sale, but respect the customer's preferences.`,
             numTickets: z.number(),
           }),
           execute: async ({ showtimeId, numTickets }) => {
+            onProgress?.({
+              customerName: customer.name,
+              step: "booking",
+              message: `Booking ${numTickets} ticket${numTickets > 1 ? "s" : ""}...`,
+            });
             return await withWriteLock(() => {
               const showtime = db
                 .prepare(
@@ -161,6 +184,12 @@ Always try to make a sale, but respect the customer's preferences.`,
               });
 
               conversation.outcome = "booked";
+              onProgress?.({
+                customerName: customer.name,
+                step: "booked",
+                message: `Booked! ${showtime.movie_name} at ${showtime.start_time}`,
+                data: { movie: showtime.movie_name, theater: showtime.theater_name, tickets: numTickets, totalPrice },
+              });
               conversation.bookingDetails = {
                 movie: showtime.movie_name,
                 theater: showtime.theater_name,
@@ -188,16 +217,31 @@ Always try to make a sale, but respect the customer's preferences.`,
     // Extract conversation messages from the result
     if (result.text) {
       conversation.messages.push({ role: "manager", content: result.text });
+      onProgress?.({
+        customerName: customer.name,
+        step: "response",
+        message: result.text,
+      });
     }
 
     if (conversation.outcome === "in_progress") {
       conversation.outcome = "left";
+      onProgress?.({
+        customerName: customer.name,
+        step: "left",
+        message: "Left without booking",
+      });
     }
   } catch (error) {
     conversation.outcome = "left";
     conversation.messages.push({
       role: "manager",
       content: `[Error: ${error instanceof Error ? error.message : "unknown"}]`,
+    });
+    onProgress?.({
+      customerName: customer.name,
+      step: "left",
+      message: "Left — conversation error",
     });
   }
 

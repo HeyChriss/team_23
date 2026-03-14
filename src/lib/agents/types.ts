@@ -39,6 +39,13 @@ export interface ConversationEntry {
   bookingDetails?: Record<string, unknown>;
 }
 
+export interface ConversationUpdate {
+  customerName: string;
+  step: "greeting" | "browsing" | "checking" | "booking" | "booked" | "response" | "left";
+  message: string;
+  data?: Record<string, unknown>;
+}
+
 export interface SimulationTickResult {
   tickNumber: number;
   simTime: string;
