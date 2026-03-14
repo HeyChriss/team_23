@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Dashboard from "@/components/Dashboard";
 import SimulationPanel from "@/components/SimulationPanel";
 import CustomersPanel from "@/components/CustomersPanel";
@@ -9,6 +9,24 @@ type Tab = "dashboard" | "simulation" | "customers";
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("simulation");
+  const [simRunning, setSimRunning] = useState(false);
+  const [simDay, setSimDay] = useState(0);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { running, dayNumber } = (e as CustomEvent).detail;
+      setSimRunning(running);
+      setSimDay(dayNumber);
+    };
+    window.addEventListener("sim:state", handler);
+    return () => window.removeEventListener("sim:state", handler);
+  }, []);
+
+  const toggleSimulation = () => {
+    window.dispatchEvent(new CustomEvent("sim:control", {
+      detail: { action: simRunning ? "stop" : "start" },
+    }));
+  };
 
   return (
     <div className="flex min-h-screen flex-col" style={{ background: "#08080a" }}>
@@ -30,6 +48,19 @@ export default function Home() {
             </div>
           </div>
 
+          {/* Simulation control */}
+          <button
+            onClick={toggleSimulation}
+            className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all hover:translate-y-[-1px]"
+            style={{
+              background: simRunning ? "var(--accent-red)" : "var(--accent-green)",
+              color: "#0a0a0a",
+            }}
+          >
+            <span>{simRunning ? "\u23F9" : "\u25B6"}</span>
+            {simRunning ? `Day ${simDay} Running` : "Start Simulation"}
+          </button>
+
           {/* Tab navigation */}
           <nav className="flex gap-1 rounded-lg p-1" style={{ background: "var(--surface)" }}>
             {([
@@ -49,26 +80,16 @@ export default function Home() {
         </div>
       </header>
 
-      {/* ── Dashboard Tab ─────────────────────────────────────────────────── */}
-      {tab === "dashboard" && (
-        <main className="flex-1 overflow-y-auto">
-          <Dashboard />
-        </main>
-      )}
-
-      {/* ── Simulation Tab ────────────────────────────────────────────────── */}
-      {tab === "simulation" && (
-        <main className="flex-1 overflow-y-auto">
-          <SimulationPanel />
-        </main>
-      )}
-
-      {/* ── Customers Tab ────────────────────────────────────────────────── */}
-      {tab === "customers" && (
-        <main className="flex-1 overflow-y-auto">
-          <CustomersPanel />
-        </main>
-      )}
+      {/* All tabs stay mounted so SSE connections and state persist across tab switches */}
+      <main className="flex-1 overflow-y-auto" style={{ display: tab === "dashboard" ? "block" : "none" }}>
+        <Dashboard />
+      </main>
+      <main className="flex-1 overflow-y-auto" style={{ display: tab === "simulation" ? "block" : "none" }}>
+        <SimulationPanel />
+      </main>
+      <main className="flex-1 overflow-y-auto" style={{ display: tab === "customers" ? "block" : "none" }}>
+        <CustomersPanel />
+      </main>
     </div>
   );
 }

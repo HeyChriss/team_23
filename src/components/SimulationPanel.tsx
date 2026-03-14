@@ -279,6 +279,22 @@ export default function SimulationPanel() {
     return () => { if (eventSourceRef.current) eventSourceRef.current.close(); };
   }, []);
 
+  // ── Broadcast running state & listen for external start/stop ──────────
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("sim:state", { detail: { running: simRunning, dayNumber } }));
+  }, [simRunning, dayNumber]);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { action } = (e as CustomEvent).detail as { action: string };
+      if (action === "start" && !simRunning) startSimulation();
+      else if (action === "stop" && simRunning) stopSimulation();
+    };
+    window.addEventListener("sim:control", handler);
+    return () => window.removeEventListener("sim:control", handler);
+  }, [simRunning, startSimulation, stopSimulation]);
+
   // ── Derived values ─────────────────────────────────────────────────────
 
   const clockTime = clock
