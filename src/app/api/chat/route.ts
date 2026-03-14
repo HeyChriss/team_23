@@ -8,12 +8,14 @@ import {
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
+import { getSimulationClock } from "@/lib/simulation-clock";
 
 export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json();
   const db = getDb();
+  const clock = getSimulationClock();
 
   const result = streamText({
     model: anthropic("claude-sonnet-4-6"),
@@ -108,7 +110,7 @@ If they do, use the getActivePromotions tool to show relevant deals, or validate
           theaterId: z.number().optional().describe("Filter by theater ID"),
         }),
         execute: async ({ movieId, date, theaterId }) => {
-          const showDate = date || new Date().toISOString().split("T")[0];
+          const showDate = date || clock.today();
 
           let query = `
             SELECT s.id AS showtime_id, s.show_date, s.start_time, s.end_time,
@@ -199,7 +201,7 @@ If they do, use the getActivePromotions tool to show relevant deals, or validate
             .describe("Filter promos applicable to a specific movie"),
         }),
         execute: async ({ category, movieId }) => {
-          const today = new Date().toISOString().split("T")[0];
+          const today = clock.today();
           let query = `
             SELECT p.*, GROUP_CONCAT(pc.code) AS codes
             FROM promotions p
@@ -291,7 +293,7 @@ If they do, use the getActivePromotions tool to show relevant deals, or validate
               return { error: "This promotion is no longer active." };
             }
 
-            const today = new Date().toISOString().split("T")[0];
+            const today = clock.today();
             if (today < (pc.start_date as string) || today > (pc.end_date as string)) {
               return { error: "This promotion has expired or hasn't started yet." };
             }

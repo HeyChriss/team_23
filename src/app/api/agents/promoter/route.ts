@@ -8,12 +8,14 @@ import {
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
+import { getSimulationClock } from "@/lib/simulation-clock";
 
 export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json();
   const db = getDb();
+  const clock = getSimulationClock();
 
   const result = streamText({
     model: anthropic("claude-sonnet-4-6"),
