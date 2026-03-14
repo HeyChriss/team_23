@@ -186,7 +186,11 @@ export default function SimulationPanel() {
           const parsed = evData.data ? JSON.parse(evData.data) : {};
           if (parsed.customer) {
             window.dispatchEvent(new CustomEvent("sim:customer-status", {
-              detail: { customerName: parsed.customer, status: "active" },
+              detail: {
+                customerName: parsed.customer,
+                status: "active",
+                agentType: parsed.customerType === "passive" ? "promoter" : "manager",
+              },
             }));
           }
         } catch { /* ignore parse errors */ }

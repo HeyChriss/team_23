@@ -271,6 +271,10 @@ body {
   }
 }
 
+@keyframes dashScroll {
+  to { stroke-dashoffset: -5; }
+}
+
 .bubble-wrapper {
   animation: bubbleFloat 8s ease-in-out infinite !important;
 }

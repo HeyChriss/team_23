@@ -16,8 +16,8 @@ import { TheaterStateController } from "./theater-state";
 import { getDb } from "./db";
 import { insertEvent, clearEvents } from "./event-store";
 import { spawnActiveCustomers, spawnPassiveCustomers } from "./agents/customer-spawner";
-import { runActiveCustomerBatch } from "./agents/customer-active";
-import { runPassiveCustomerBatch } from "./agents/customer-passive";
+import { runActiveCustomer } from "./agents/customer-active";
+import { runPassiveCustomer } from "./agents/customer-passive";
 import { runOptimizer } from "./agents/optimizer";
 import { runScheduler } from "./agents/scheduler";
 import { runPromoter } from "./agents/promoter-agent";
@@ -206,18 +206,31 @@ class SimulationEngine {
 
       summary.totalCustomers += activeCustomers.length;
 
-      const conversations = await runActiveCustomerBatch(activeCustomers, waveTime);
+      // Run conversations in parallel but emit each result as it completes (streaming)
       let waveBooked = 0;
       let waveLeft = 0;
-      for (const conv of conversations) {
-        emit({ type: "conversation", data: conv });
-        if (conv.outcome === "booked") {
-          waveBooked++;
-          summary.totalBookings++;
-        } else {
-          waveLeft++;
-          summary.totalLeft++;
-        }
+
+      const activeResults = await Promise.allSettled(
+        activeCustomers.map(async (c) => {
+          try {
+            const conv = await runActiveCustomer(c, waveTime);
+            // Emit immediately when THIS conversation finishes — don't wait for others
+            emit({ type: "conversation", data: conv });
+            return conv;
+          } catch {
+            return {
+              customerName: c.name, personality: c,
+              messages: [{ role: "manager" as const, content: "[Error]" }],
+              outcome: "left" as const,
+            };
+          }
+        })
+      );
+
+      for (const r of activeResults) {
+        const conv = r.status === "fulfilled" ? r.value : null;
+        if (conv?.outcome === "booked") { waveBooked++; summary.totalBookings++; }
+        else { waveLeft++; summary.totalLeft++; }
       }
 
       // Passive customers (respond to promotions)
@@ -239,35 +252,42 @@ class SimulationEngine {
         });
       }
 
-      const passiveResults = await runPassiveCustomerBatch(passiveCustomers, waveTime);
-      for (const pr of passiveResults) {
-        if (pr.accepted) {
-          waveBooked++;
-          summary.totalBookings++;
-          emit({
-            type: "event",
-            data: {
-              sim_time: waveTime,
-              event_type: "promotion_accepted",
-              agent: "customer",
-              summary: `${pr.customerName} accepted promo "${pr.promoName}"`,
-              data: JSON.stringify({ customer: pr.customerName, ...(pr.bookingDetails || {}) }),
-            },
-          });
-        } else {
-          waveLeft++;
-          summary.totalLeft++;
-          emit({
-            type: "event",
-            data: {
-              sim_time: waveTime,
-              event_type: "promotion_rejected",
-              agent: "customer",
-              summary: `${pr.customerName} declined${pr.promoName ? ` "${pr.promoName}"` : " — no matching promo"}`,
-              data: JSON.stringify({ customer: pr.customerName }),
-            },
-          });
-        }
+      // Run passive customers in parallel, emit each result individually
+      const passiveSettled = await Promise.allSettled(
+        passiveCustomers.map(async (c) => {
+          const pr = await runPassiveCustomer(c, waveTime);
+          // Emit immediately
+          if (pr.accepted) {
+            emit({
+              type: "event",
+              data: {
+                sim_time: waveTime,
+                event_type: "promotion_accepted",
+                agent: "customer",
+                summary: `${pr.customerName} accepted promo "${pr.promoName}"`,
+                data: JSON.stringify({ customer: pr.customerName, ...(pr.bookingDetails || {}) }),
+              },
+            });
+          } else {
+            emit({
+              type: "event",
+              data: {
+                sim_time: waveTime,
+                event_type: "promotion_rejected",
+                agent: "customer",
+                summary: `${pr.customerName} declined${pr.promoName ? ` "${pr.promoName}"` : " — no matching promo"}`,
+                data: JSON.stringify({ customer: pr.customerName }),
+              },
+            });
+          }
+          return pr;
+        })
+      );
+
+      for (const r of passiveSettled) {
+        const pr = r.status === "fulfilled" ? r.value : null;
+        if (pr?.accepted) { waveBooked++; summary.totalBookings++; }
+        else { waveLeft++; summary.totalLeft++; }
       }
 
       // Emit KPIs after each wave

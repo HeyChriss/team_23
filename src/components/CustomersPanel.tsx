@@ -45,6 +45,7 @@ export default function CustomersPanel() {
   const spawningRef = useRef(false);
   const [processing, setProcessing] = useState(false);
   const [lastResults, setLastResults] = useState<{ customerName: string; outcome: string; details: Record<string, unknown> }[]>([]);
+  const [activeConversations, setActiveConversations] = useState<Map<string, "manager" | "promoter">>(new Map());
 
   // Keep ref in sync
   useEffect(() => {
@@ -246,24 +247,28 @@ export default function CustomersPanel() {
   // ── Listen for simulation engine customer events ─────────────────────────
   useEffect(() => {
     const handler = (e: Event) => {
-      const { customerName, status } = (e as CustomEvent).detail as {
+      const { customerName, status, agentType } = (e as CustomEvent).detail as {
         customerName: string;
         status: "active" | "booked" | "left";
+        agentType?: "manager" | "promoter";
       };
       if (!customerName) return;
 
-      // Find the bubble by customer name
-      const bubble = bubblesRef.current.find(
-        (b) => b.customer.name === customerName && b.state === "floating"
-      );
-      if (!bubble) return;
-
-      if (status === "booked") {
-        exitBubble(bubble.customer.id, true);
-      } else if (status === "left") {
-        exitBubble(bubble.customer.id, false);
+      if (status === "active") {
+        // Customer started talking to an agent — track the connection
+        setActiveConversations((prev) => new Map(prev).set(customerName, agentType || "manager"));
+      } else if (status === "booked" || status === "left") {
+        // Conversation ended — remove tracking and exit bubble
+        setActiveConversations((prev) => {
+          const next = new Map(prev);
+          next.delete(customerName);
+          return next;
+        });
+        const bubble = bubblesRef.current.find(
+          (b) => b.customer.name === customerName && (b.state === "floating" || b.state === "spawning")
+        );
+        if (bubble) exitBubble(bubble.customer.id, status === "booked");
       }
-      // "active" status — bubble stays but we could add a glow effect later
     };
     window.addEventListener("sim:customer-status", handler);
     return () => window.removeEventListener("sim:customer-status", handler);
@@ -374,10 +379,98 @@ export default function CustomersPanel() {
 
             {/* Pool area */}
             <div className="relative flex-1 min-h-[400px]">
+              {/* Agent nodes */}
+              {activeConversations.size > 0 && (
+                <>
+                  {/* Manager Agent node */}
+                  <div
+                    className="absolute z-30 flex flex-col items-center gap-1"
+                    style={{ left: "12%", top: "12%", transform: "translate(-50%, -50%)" }}
+                  >
+                    <div
+                      className="flex h-14 w-14 items-center justify-center rounded-xl"
+                      style={{
+                        background: "rgba(91,217,123,0.15)",
+                        border: "2px solid var(--accent-green)",
+                        boxShadow: "0 0 20px rgba(91,217,123,0.3)",
+                        animation: "pulse 2s ease-in-out infinite",
+                      }}
+                    >
+                      <span className="text-xl">&#128188;</span>
+                    </div>
+                    <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: "var(--accent-green)" }}>
+                      Manager
+                    </span>
+                  </div>
+
+                  {/* Promoter Agent node */}
+                  <div
+                    className="absolute z-30 flex flex-col items-center gap-1"
+                    style={{ left: "88%", top: "12%", transform: "translate(-50%, -50%)" }}
+                  >
+                    <div
+                      className="flex h-14 w-14 items-center justify-center rounded-xl"
+                      style={{
+                        background: "rgba(212,168,83,0.15)",
+                        border: "2px solid var(--gold)",
+                        boxShadow: "0 0 20px rgba(212,168,83,0.3)",
+                        animation: "pulse 2s ease-in-out infinite",
+                      }}
+                    >
+                      <span className="text-xl">&#128227;</span>
+                    </div>
+                    <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: "var(--gold)" }}>
+                      Promoter
+                    </span>
+                  </div>
+
+                  {/* SVG connection lines */}
+                  <svg
+                    className="absolute inset-0 z-20 pointer-events-none"
+                    style={{ width: "100%", height: "100%" }}
+                    viewBox="0 0 100 100"
+                    preserveAspectRatio="none"
+                  >
+                    <defs>
+                      <linearGradient id="line-manager" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="rgba(91,217,123,0.6)" />
+                        <stop offset="100%" stopColor="rgba(91,217,123,0.1)" />
+                      </linearGradient>
+                      <linearGradient id="line-promoter" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="rgba(212,168,83,0.6)" />
+                        <stop offset="100%" stopColor="rgba(212,168,83,0.1)" />
+                      </linearGradient>
+                    </defs>
+                    {filteredBubbles
+                      .filter((b) => b.state === "floating" && activeConversations.has(b.customer.name))
+                      .map((b) => {
+                        const agent = activeConversations.get(b.customer.name)!;
+                        const agentX = agent === "manager" ? 12 : 88;
+                        const agentY = 12;
+                        return (
+                          <line
+                            key={`line-${b.customer.id}`}
+                            x1={agentX}
+                            y1={agentY}
+                            x2={b.x}
+                            y2={b.y}
+                            stroke={`url(#line-${agent})`}
+                            strokeWidth="0.4"
+                            strokeDasharray="1.5 1"
+                            style={{ animation: "dashScroll 1s linear infinite" }}
+                          />
+                        );
+                      })}
+                  </svg>
+                </>
+              )}
+
               {filteredBubbles.map((b) => {
                 const c = b.customer;
                 const isBuyer = c.customer_type === "buyer";
                 const isHovered = hoveredId === c.id;
+                const isActive = activeConversations.has(c.name);
+                const agentType = activeConversations.get(c.name);
 
                 const isExiting = b.state === "exiting-buy" || b.state === "exiting-leave";
                 const exitTarget = b.state === "exiting-buy" ? { x: 25, y: 100 } : { x: 75, y: 100 };
@@ -396,7 +489,7 @@ export default function CustomersPanel() {
                           ? "all 0.8s ease-in"
                           : "none",
                       opacity: isExiting ? 0 : 1,
-                      zIndex: isHovered ? 40 : 1,
+                      zIndex: isActive ? 35 : isHovered ? 40 : 1,
                     }}
                   >
                     <div
@@ -407,13 +500,26 @@ export default function CustomersPanel() {
                       <div
                         className="absolute inset-0 rounded-full transition-all duration-300"
                         style={{
-                          background: isBuyer
-                            ? "radial-gradient(circle at 30% 30%, rgba(167,243,208,0.6), rgba(110,231,183,0.45), rgba(52,211,153,0.3))"
-                            : "radial-gradient(circle at 30% 30%, rgba(254,240,138,0.6), rgba(253,224,71,0.45), rgba(250,204,21,0.3))",
-                          boxShadow: isBuyer
-                            ? "inset -3px -3px 8px rgba(0,0,0,0.15), inset 3px 3px 8px rgba(255,255,255,0.2), 0 6px 16px rgba(110,231,183,0.15)"
-                            : "inset -3px -3px 8px rgba(0,0,0,0.15), inset 3px 3px 8px rgba(255,255,255,0.2), 0 6px 16px rgba(253,224,71,0.15)",
-                          border: "1px solid rgba(255,255,255,0.15)",
+                          background: isActive
+                            ? agentType === "promoter"
+                              ? "radial-gradient(circle at 30% 30%, rgba(212,168,83,0.7), rgba(212,168,83,0.5), rgba(212,168,83,0.3))"
+                              : "radial-gradient(circle at 30% 30%, rgba(91,217,123,0.7), rgba(91,217,123,0.5), rgba(91,217,123,0.3))"
+                            : isBuyer
+                              ? "radial-gradient(circle at 30% 30%, rgba(167,243,208,0.6), rgba(110,231,183,0.45), rgba(52,211,153,0.3))"
+                              : "radial-gradient(circle at 30% 30%, rgba(254,240,138,0.6), rgba(253,224,71,0.45), rgba(250,204,21,0.3))",
+                          boxShadow: isActive
+                            ? agentType === "promoter"
+                              ? "inset -3px -3px 8px rgba(0,0,0,0.15), inset 3px 3px 8px rgba(255,255,255,0.2), 0 0 24px rgba(212,168,83,0.5)"
+                              : "inset -3px -3px 8px rgba(0,0,0,0.15), inset 3px 3px 8px rgba(255,255,255,0.2), 0 0 24px rgba(91,217,123,0.5)"
+                            : isBuyer
+                              ? "inset -3px -3px 8px rgba(0,0,0,0.15), inset 3px 3px 8px rgba(255,255,255,0.2), 0 6px 16px rgba(110,231,183,0.15)"
+                              : "inset -3px -3px 8px rgba(0,0,0,0.15), inset 3px 3px 8px rgba(255,255,255,0.2), 0 6px 16px rgba(253,224,71,0.15)",
+                          border: isActive
+                            ? agentType === "promoter"
+                              ? "2px solid var(--gold)"
+                              : "2px solid var(--accent-green)"
+                            : "1px solid rgba(255,255,255,0.15)",
+                          animation: isActive ? "pulse 1.5s ease-in-out infinite" : undefined,
                         }}
                       />
                       <span
@@ -422,6 +528,20 @@ export default function CustomersPanel() {
                       >
                         {c.name.split(" ")[0]}
                       </span>
+
+                      {/* Active conversation badge */}
+                      {isActive && (
+                        <div
+                          className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-2 py-0.5 text-[8px] font-bold uppercase"
+                          style={{
+                            background: agentType === "promoter" ? "rgba(212,168,83,0.2)" : "rgba(91,217,123,0.2)",
+                            border: `1px solid ${agentType === "promoter" ? "rgba(212,168,83,0.4)" : "rgba(91,217,123,0.4)"}`,
+                            color: agentType === "promoter" ? "var(--gold)" : "var(--accent-green)",
+                          }}
+                        >
+                          {agentType === "promoter" ? "Promo" : "Chatting"}
+                        </div>
+                      )}
                     </div>
 
                     {/* Hover card */}
