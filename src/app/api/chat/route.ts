@@ -8,12 +8,14 @@ import {
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
+import { getSimulationClock } from "@/lib/simulation-clock";
 
 export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json();
   const db = getDb();
+  const clock = getSimulationClock();
 
   const result = streamText({
     model: anthropic("claude-sonnet-4-6"),
@@ -32,7 +34,10 @@ and a full week of showtimes. Use the tools to query real data — never make up
 Be friendly, helpful, and knowledgeable about movies. When a customer wants to book,
 guide them through: selecting a movie → choosing a showtime → picking seats → confirming the booking.
 
-When showing showtimes, include the theater name, screen type, ticket price, and available seats.`,
+When showing showtimes, include the theater name, screen type, ticket price, and available seats.
+
+Customers can use promo codes when booking. Always ask if they have a promo code before finalizing.
+If they do, use the getActivePromotions tool to show relevant deals, or validate their code during booking.`,
     messages: await convertToModelMessages(messages),
     tools: {
       getNowShowing: tool({
@@ -105,7 +110,7 @@ When showing showtimes, include the theater name, screen type, ticket price, and
           theaterId: z.number().optional().describe("Filter by theater ID"),
         }),
         execute: async ({ movieId, date, theaterId }) => {
-          const showDate = date || new Date().toISOString().split("T")[0];
+          const showDate = date || clock.today();
 
           let query = `
             SELECT s.id AS showtime_id, s.show_date, s.start_time, s.end_time,
@@ -182,8 +187,50 @@ When showing showtimes, include the theater name, screen type, ticket price, and
         },
       }),
 
+      getActivePromotions: tool({
+        description:
+          "Get currently active promotions and deals. Can filter by category or movie.",
+        inputSchema: z.object({
+          category: z
+            .string()
+            .optional()
+            .describe("Filter promos by movie category"),
+          movieId: z
+            .number()
+            .optional()
+            .describe("Filter promos applicable to a specific movie"),
+        }),
+        execute: async ({ category, movieId }) => {
+          const today = clock.today();
+          let query = `
+            SELECT p.*, GROUP_CONCAT(pc.code) AS codes
+            FROM promotions p
+            LEFT JOIN promo_codes pc ON p.id = pc.promotion_id AND pc.is_active = 1 AND pc.times_used < pc.max_uses
+            WHERE p.is_active = 1 AND p.start_date <= ? AND p.end_date >= ?
+          `;
+          const params: (string | number)[] = [today, today];
+
+          if (category) {
+            query +=
+              " AND (p.applicable_category IS NULL OR LOWER(p.applicable_category) = LOWER(?))";
+            params.push(category);
+          }
+          if (movieId) {
+            query +=
+              " AND (p.applicable_movie_id IS NULL OR p.applicable_movie_id = ?)";
+            params.push(movieId);
+          }
+
+          query += " GROUP BY p.id ORDER BY p.discount_value DESC";
+
+          const promotions = db.prepare(query).all(...params);
+          return { promotions, totalCount: promotions.length };
+        },
+      }),
+
       bookTickets: tool({
-        description: "Book tickets for a specific showtime",
+        description:
+          "Book tickets for a specific showtime. Supports optional promo code for discounts.",
         inputSchema: z.object({
           showtimeId: z.number().describe("The showtime ID"),
           numTickets: z
@@ -192,11 +239,15 @@ When showing showtimes, include the theater name, screen type, ticket price, and
             .max(10)
             .describe("Number of tickets to book (max 10)"),
           customerName: z.string().describe("Customer name for the booking"),
+          promoCode: z
+            .string()
+            .optional()
+            .describe("Optional promo code for a discount"),
         }),
-        execute: async ({ showtimeId, numTickets, customerName }) => {
+        execute: async ({ showtimeId, numTickets, customerName, promoCode }) => {
           const showtime = db
             .prepare(
-              `SELECT s.*, m.name AS movie_name, t.name AS theater_name, t.screen_type
+              `SELECT s.*, m.name AS movie_name, m.category, t.name AS theater_name, t.screen_type
                FROM showtimes s
                JOIN movies m ON s.movie_id = m.id
                JOIN theaters t ON s.theater_id = t.id
@@ -213,16 +264,114 @@ When showing showtimes, include the theater name, screen type, ticket price, and
             };
           }
 
+          const unitPrice = showtime.ticket_price as number;
+          let discountAmount = 0;
+          let promoCodeId: number | null = null;
+          let promoName: string | null = null;
+
+          // Validate and apply promo code
+          if (promoCode) {
+            const pc = db
+              .prepare(
+                `SELECT pc.id, pc.promotion_id, pc.max_uses, pc.times_used,
+                        p.name, p.discount_type, p.discount_value, p.min_tickets,
+                        p.max_discount, p.applicable_movie_id, p.applicable_showtime_id,
+                        p.applicable_category, p.start_date, p.end_date, p.is_active AS promo_active
+                 FROM promo_codes pc
+                 JOIN promotions p ON pc.promotion_id = p.id
+                 WHERE UPPER(pc.code) = UPPER(?) AND pc.is_active = 1`
+              )
+              .get(promoCode) as Record<string, unknown> | undefined;
+
+            if (!pc) {
+              return { error: "Invalid promo code." };
+            }
+            if ((pc.times_used as number) >= (pc.max_uses as number)) {
+              return { error: "This promo code has reached its usage limit." };
+            }
+            if (!(pc.promo_active as number)) {
+              return { error: "This promotion is no longer active." };
+            }
+
+            const today = clock.today();
+            if (today < (pc.start_date as string) || today > (pc.end_date as string)) {
+              return { error: "This promotion has expired or hasn't started yet." };
+            }
+            if (numTickets < (pc.min_tickets as number)) {
+              return {
+                error: `This promo requires at least ${pc.min_tickets} tickets.`,
+              };
+            }
+            if (
+              pc.applicable_movie_id &&
+              pc.applicable_movie_id !== (showtime.movie_id as number)
+            ) {
+              return { error: "This promo code doesn't apply to this movie." };
+            }
+            if (
+              pc.applicable_showtime_id &&
+              pc.applicable_showtime_id !== showtimeId
+            ) {
+              return { error: "This promo code doesn't apply to this showtime." };
+            }
+            if (
+              pc.applicable_category &&
+              (pc.applicable_category as string).toLowerCase() !==
+                (showtime.category as string).toLowerCase()
+            ) {
+              return {
+                error: `This promo is only for ${pc.applicable_category} movies.`,
+              };
+            }
+
+            // Calculate discount
+            if (pc.discount_type === "percent") {
+              discountAmount = (pc.discount_value as number / 100) * unitPrice * numTickets;
+            } else {
+              discountAmount = (pc.discount_value as number) * numTickets;
+            }
+            if (pc.max_discount && discountAmount > (pc.max_discount as number)) {
+              discountAmount = pc.max_discount as number;
+            }
+            discountAmount = Math.round(discountAmount * 100) / 100;
+
+            promoCodeId = pc.id as number;
+            promoName = pc.name as string;
+
+            // Increment promo code usage
+            db.prepare(
+              "UPDATE promo_codes SET times_used = times_used + 1 WHERE id = ?"
+            ).run(promoCodeId);
+          }
+
+          const totalPrice = Math.max(
+            0,
+            Math.round((unitPrice * numTickets - discountAmount) * 100) / 100
+          );
+          const confirmationCode = `SLC-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
           // Decrement available seats
           db.prepare(
             "UPDATE showtimes SET seats_available = seats_available - ?, status = CASE WHEN seats_available - ? <= 0 THEN 'sold_out' ELSE 'selling' END WHERE id = ?"
           ).run(numTickets, numTickets, showtimeId);
 
-          const confirmationCode = `SLC-${Date.now().toString(36).toUpperCase()}`;
-          const totalPrice =
-            numTickets * (showtime.ticket_price as number);
+          // Record the booking
+          db.prepare(
+            `INSERT INTO bookings
+             (showtime_id, customer_name, num_tickets, unit_price, discount_amount, total_price, promo_code_id, confirmation_code)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+          ).run(
+            showtimeId,
+            customerName,
+            numTickets,
+            unitPrice,
+            discountAmount,
+            totalPrice,
+            promoCodeId,
+            confirmationCode
+          );
 
-          return {
+          const result: Record<string, unknown> = {
             success: true,
             confirmationCode,
             customerName,
@@ -231,10 +380,18 @@ When showing showtimes, include the theater name, screen type, ticket price, and
             date: showtime.show_date,
             time: showtime.start_time,
             tickets: numTickets,
-            pricePerTicket: `$${(showtime.ticket_price as number).toFixed(2)}`,
+            pricePerTicket: `$${unitPrice.toFixed(2)}`,
             totalPrice: `$${totalPrice.toFixed(2)}`,
             message: `Booking confirmed! Your confirmation code is ${confirmationCode}. Please arrive 15 minutes before showtime.`,
           };
+
+          if (promoName) {
+            result.promoApplied = promoName;
+            result.discount = `$${discountAmount.toFixed(2)}`;
+            result.originalPrice = `$${(unitPrice * numTickets).toFixed(2)}`;
+          }
+
+          return result;
         },
       }),
 
