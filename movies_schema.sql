@@ -7,5 +7,8 @@ CREATE TABLE IF NOT EXISTS movies (
     length_minutes INTEGER NOT NULL,
     language TEXT NOT NULL,
     director TEXT NOT NULL,
-    release_date DATE NOT NULL
+    release_date DATE NOT NULL,
+    synopsis TEXT,
+    poster_url TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1
 );

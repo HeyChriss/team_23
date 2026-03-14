@@ -16,14 +16,14 @@
 
 ### Curator Agent
 
-- [ ] **API route** `POST /api/agents/curator` — agent endpoint with its own system prompt and tools
-- [ ] **Tool: `addMovie`** — AI generates a new movie (title, genre, cast, synopsis, runtime) and inserts into DB
-- [ ] **Tool: `retireMovie`** — removes a movie from the catalog and cancels its future showtimes
-- [ ] **Tool: `getGenreDistribution`** — returns how many movies per genre are in the catalog
-- [ ] **Tool: `getMoviePerformance`** — returns fill rates and booking counts per movie to identify underperformers
-- [ ] **Tool: `trendAnalysis`** — shows which genres/categories are selling best
-- [ ] **Frontend**: Add a "Curator" tab or panel where you can trigger/watch the curator agent work
-- [ ] **Auto-mode**: Curator can be triggered to autonomously rebalance the catalog (add trending genres, retire flops)
+- [x] **API route** `POST /api/agents/curator` — agent endpoint with its own system prompt and tools
+- [x] **Tool: `addMovie`** — AI generates a new movie (title, genre, cast, synopsis, runtime) and inserts into DB
+- [x] **Tool: `retireMovie`** — removes a movie from the catalog and cancels its future showtimes
+- [x] **Tool: `getGenreDistribution`** — returns how many movies per genre are in the catalog
+- [x] **Tool: `getMoviePerformance`** — returns fill rates and booking counts per movie to identify underperformers
+- [x] **Tool: `trendAnalysis`** — shows which genres/categories are selling best
+- [x] **Frontend**: Add a "Curator" tab or panel where you can trigger/watch the curator agent work
+- [x] **Auto-mode**: Curator can be triggered to autonomously rebalance the catalog (add trending genres, retire flops)
 
 ### Scheduler Agent
 
@@ -38,8 +38,8 @@
 
 ### DB Changes (Dev 1)
 
-- [ ] Add `synopsis` and `poster_url` columns to movies table (for curator-generated content)
-- [ ] Add `is_active` column to movies table (soft-delete for retired movies)
+- [x] Add `synopsis` and `poster_url` columns to movies table (for curator-generated content)
+- [x] Add `is_active` column to movies table (soft-delete for retired movies)
 
 ---
 
