@@ -297,33 +297,55 @@ erDiagram
 1. **Day-based simulation**: No artificial timers. Each day runs as fast as API calls complete.
 2. **Sequential phases, concurrent customers**: Agents run sequentially to avoid SQLite contention. Customers within a wave run concurrently via `Promise.allSettled`.
 3. **Write queue mutex**: All DB writes go through an async mutex to prevent SQLITE_BUSY errors.
-4. **SSE streaming**: Events stream to the dashboard in real-time as they happen — no polling.
+4. **SSE streaming**: Events stream in real-time — individual conversation results emit as each completes (not batched). Step-by-step `conversation_update` events show tool-call progress live.
 5. **Singleton patterns**: DB connection, simulation clock, and engine are all singletons for consistent state.
 6. **Shared SQLite DB**: All agents read/write the same database — single source of truth.
-7. **Customer personalities are data, not LLM-generated**: 25 predefined templates keep costs low.
+7. **DB-driven customer pool**: Customer spawner reads from the `customers` table (buyer → active, persuadable → passive). LLM-powered spawner API can generate new customers on demand.
 8. **Passive customers are deterministic**: No LLM call — just probability-based acceptance of promos.
+9. **Persistent tabs**: All tabs stay mounted (CSS display toggle) so SSE connections survive tab switches. Cross-component communication uses `window` custom events.
+10. **Real-time agent visualization**: Manager/Promoter agent nodes with SVG connection lines to active customers. Live conversation feed shows step-by-step progress.
 
-## Customer Pool (Bubble UI)
+## Customer Pool & Agent Visualization
 
-The **Customers** tab shows a pool of potential customers as floating bubbles:
-- **Bubble UI**: 3D-style circles (green = Ready to Buy, amber = Needs Persuasion), uniform size, multi-directional drift animation
-- **Hover**: Full details (name, type, age, preferences, tier, etc.) in a tooltip card
-- **Live updates**: Polls `/api/customers` every 3 seconds
-- **New customers**: Pop-in animation when added to DB
-- **Booked customers**: Disappear from pool (matched by `customer_name` in bookings)
-- **Add customer**: `node scripts/add-customer.js` (edit script for name/details)
+The **Customers** tab is a two-panel "Agent Theater" view:
+
+### Left Panel — Physics Bubble Pool
+- **Physics engine**: Velocity, gravity, repulsion between bubbles (requestAnimationFrame loop)
+- **Bubble colors**: Green = buyer, amber = persuadable, gold glow = talking to Manager, gold border = talking to Promoter
+- **Agent nodes**: Individual Manager (top-left) and Promoter (top-right) icons appear during active conversations
+- **SVG connection lines**: Animated dashed lines from active customers to their agent
+- **Active badges**: "Chatting" / "Promo" labels on customers in conversation
+- **Spawn zone** (top): New customers drop in with physics
+- **Exit zones** (bottom): Booked → bottom-left, Left → bottom-right
+- **Auto-spawn**: Pool auto-refills via LLM spawner when below threshold
+
+### Right Panel — Live Conversation Feed
+- **Real-time step-by-step**: Each conversation card shows progress as it happens:
+  - 🗣️ Greeting → 🔍 Browsing → 📋 Checking showtimes → 🎫 Booking → ✅ Booked / 🚶 Left
+- **LIVE badge**: Pulses while agent is processing, with "thinking..." indicator
+- **BOOKED/LEFT badges**: Final outcome on completed conversations
+- **Timeline UI**: Left border connects all steps in a conversation
+- **Auto-scroll**: Feed scrolls to latest conversation
+
+### Cross-Tab Integration
+- Simulation SSE events broadcast via `window` custom events
+- Bubble pool reacts to simulation events even when Simulation tab is active
+- All tabs stay mounted — no state loss on tab switch
 
 ## File Structure
 
 ```
 src/
 ├── app/
-│   ├── page.tsx                          # Dashboard + Curator + Customers + Time tabs
+│   ├── page.tsx                          # Dashboard + Simulation + Customers tabs (all mounted)
 │   └── api/
 │       ├── clock/route.ts                # Clock control
 │       ├── theater-state/route.ts        # State queries
 │       ├── customers/route.ts            # Customer pool (excludes booked)
-│       ├── agents/curator/route.ts       # Curator agent
+│       ├── agents/
+│       │   ├── curator/route.ts          # Curator agent
+│       │   ├── customer-spawner/route.ts # LLM customer generator
+│       │   └── customer-decide/route.ts  # LLM buying decisions
 │       └── simulation/
 │           ├── stream/route.ts           # SSE event stream
 │           └── control/route.ts          # Start/stop/reset
@@ -337,7 +359,7 @@ src/
 │   ├── promoter-tools.ts                 # Shared promo functions
 │   └── agents/
 │       ├── types.ts                      # Shared types
-│       ├── customer-spawner.ts           # 25 personality templates
+│       ├── customer-spawner.ts           # DB-integrated spawner (fallback: 25 hard-coded)
 │       ├── customer-active.ts            # Active customer runner
 │       ├── customer-passive.ts           # Passive customer (deterministic)
 │       ├── manager-agent.ts              # Manager (helps customers book)
@@ -353,7 +375,8 @@ src/
     ├── ActivityFeed.tsx                  # Agent action log
     ├── ConversationView.tsx             # Customer dialogue viewer
     ├── CuratorPanel.tsx                  # Curator agent chat UI
-    ├── CustomersPanel.tsx                # Bubble pool, hover for details
+    ├── CustomersPanel.tsx                # Physics bubble pool + live conversation feed
+    ├── CustomerPoolLive.tsx              # Compact pool for SimulationPanel embed
     └── TimeControl.tsx                  # Time/simulation clock
 
 scripts/
