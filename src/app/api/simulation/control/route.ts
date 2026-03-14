@@ -17,25 +17,32 @@ export async function POST(req: Request) {
   switch (action) {
     case "start": {
       if (engine.isRunning) {
+        console.log("[SimControl] Already running, ignoring start");
         return Response.json({ status: "already_running" });
       }
+      console.log("[SimControl] Starting simulation engine...");
       const abortController = new AbortController();
       engine.setAbortController(abortController);
 
-      // Run engine in background — pushes events to the bus
       engine.runLoop(
         (event) => bus.push(event),
         abortController.signal
-      ).catch(() => {});
+      ).catch((e) => {
+        console.error("[SimControl] Engine loop error:", e);
+      }).finally(() => {
+        console.log("[SimControl] Engine loop ended");
+      });
 
       return Response.json({ status: "started" });
     }
 
     case "stop":
+      console.log("[SimControl] Stopping simulation");
       engine.stop();
       return Response.json({ status: "stopped" });
 
     case "reset":
+      console.log("[SimControl] Resetting simulation");
       engine.reset();
       bus.clear();
       return Response.json({ status: "reset" });

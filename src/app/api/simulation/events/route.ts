@@ -16,6 +16,9 @@ export async function GET(req: NextRequest) {
   const since = parseInt(req.nextUrl.searchParams.get("since") || "0");
 
   const events = bus.getSince(since);
+  if (events.length > 0) {
+    console.log(`[EventPoll] Returning ${events.length} events (since=${since}, next=${bus.nextIndex})`);
+  }
 
   return NextResponse.json({
     events,

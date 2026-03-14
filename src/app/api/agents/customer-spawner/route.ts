@@ -59,14 +59,19 @@ Rules:
           }
 
           try {
+            // Normal distribution around 75 for buy_likelihood
+            const u1 = Math.random(), u2 = Math.random();
+            const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+            const buyLikelihood = Math.round(Math.max(0, Math.min(100, 75 + z * 15)));
+
             db.prepare(
-              `INSERT INTO customers (name, customer_type, age, preferences, loyalty_tier, visit_frequency, budget_preference, preferred_showtime, interested_in_concessions, group_size_preference, notes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              `INSERT INTO customers (name, customer_type, age, preferences, loyalty_tier, visit_frequency, budget_preference, preferred_showtime, interested_in_concessions, group_size_preference, notes, buy_likelihood)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             ).run(
               input.name, input.customer_type, input.age, input.preferences,
               input.loyalty_tier, input.visit_frequency, input.budget_preference,
               input.preferred_showtime, input.interested_in_concessions ? 1 : 0,
-              input.group_size_preference, input.notes,
+              input.group_size_preference, input.notes, buyLikelihood,
             );
 
             existingNames.add(input.name);

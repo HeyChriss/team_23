@@ -44,6 +44,8 @@ export async function runManagerConversation(
         ? "I prefer evening showings (after 5 PM)."
         : "I'm flexible on timing.";
 
+  console.log(`[Manager] Starting conversation with ${customer.name} (${customer.favoriteGenres.join("/")})`);
+
   const customerRequest = `A customer named ${customer.name} just walked in and said:
 "Hi! I'm looking for ${customer.favoriteGenres.join(" or ")} movies. I need ${customer.groupSize} ticket${customer.groupSize > 1 ? "s" : ""}. ${budgetConstraint} ${timeConstraint}"
 
@@ -196,6 +198,7 @@ If nothing matches or seats are unavailable, say so briefly. Do NOT roleplay as 
                 confirmationCode,
               };
 
+              console.log(`[Manager] ✅ BOOKED: ${customer.name} → ${showtime.movie_name} (${numTickets} tickets, $${totalPrice})`);
               return {
                 success: true,
                 confirmationCode,
@@ -221,6 +224,7 @@ If nothing matches or seats are unavailable, say so briefly. Do NOT roleplay as 
       });
     }
 
+    console.log(`[Manager] ${customer.name} conversation outcome: ${conversation.outcome}`);
     if (conversation.outcome === "in_progress") {
       conversation.outcome = "left";
       onProgress?.({

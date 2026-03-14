@@ -71,7 +71,7 @@ export default function SimulationPanel() {
   const [simRunning, setSimRunning] = useState(false);
   const [dayNumber, setDayNumber] = useState(0);
   const [currentDate, setCurrentDate] = useState("");
-  const [currentWave, setCurrentWave] = useState("");
+  const currentWave = ""; // waves removed — continuous flow
   const [simTime, setSimTime] = useState("");
   const [simEvents, setSimEvents] = useState<SimulationEvent[]>([]);
   const [simConversations, setSimConversations] = useState<ConversationEntry[]>([]);
@@ -130,7 +130,7 @@ export default function SimulationPanel() {
         if (data.dayNumber) setDayNumber(data.dayNumber as number);
         if (data.date) setCurrentDate(data.date as string);
         if (data.simTime) setSimTime(data.simTime as string);
-        setCurrentWave("");
+        /* no waves */
         if (data.date) {
           setSimEvents((prev) => [...prev.slice(-80), {
             sim_time: (data.simTime as string) || "", event_type: "tick_start", agent: "engine",
@@ -140,29 +140,13 @@ export default function SimulationPanel() {
         break;
 
       case "day_end":
-        setCurrentWave("");
+        /* no waves */
         if (data.kpis) setSimKpis(data.kpis as KPIs);
         setSimEvents((prev) => [...prev.slice(-80), {
           sim_time: (data.date as string) || "", event_type: "tick_end", agent: "engine",
           summary: `Day ${data.dayNumber} ended`,
         }]);
         fetchState();
-        window.dispatchEvent(new CustomEvent("sim:customer-refresh"));
-        break;
-
-      case "wave_start":
-        setCurrentWave((data.wave as string) || "");
-        setSimEvents((prev) => [...prev.slice(-80), {
-          sim_time: (data.timeLabel as string) || "", event_type: "tick_start", agent: "engine",
-          summary: `${String(data.wave || "").charAt(0).toUpperCase() + String(data.wave || "").slice(1)} wave started`,
-        }]);
-        break;
-
-      case "wave_end":
-        setSimEvents((prev) => [...prev.slice(-80), {
-          sim_time: "", event_type: "tick_end", agent: "engine",
-          summary: `${String(data.wave || "").charAt(0).toUpperCase() + String(data.wave || "").slice(1)} wave: ${data.booked || 0} booked, ${data.left || 0} left`,
-        }]);
         window.dispatchEvent(new CustomEvent("sim:customer-refresh"));
         break;
 
@@ -180,10 +164,12 @@ export default function SimulationPanel() {
               window.dispatchEvent(new CustomEvent("sim:customer-status", {
                 detail: { customerName: parsed.customer, status: "booked" },
               }));
+              window.dispatchEvent(new CustomEvent("sim:customer-refresh"));
             } else if (evData.event_type === "promotion_rejected" || evData.event_type === "customer_left") {
               window.dispatchEvent(new CustomEvent("sim:customer-status", {
                 detail: { customerName: parsed.customer, status: "left" },
               }));
+              window.dispatchEvent(new CustomEvent("sim:customer-refresh"));
             }
           }
         } catch { /* ignore */ }
@@ -197,6 +183,7 @@ export default function SimulationPanel() {
           window.dispatchEvent(new CustomEvent("sim:customer-status", {
             detail: { customerName: conv.customerName, status: conv.outcome === "booked" ? "booked" : "left" },
           }));
+          window.dispatchEvent(new CustomEvent("sim:customer-refresh"));
         }
         break;
       }
@@ -216,7 +203,7 @@ export default function SimulationPanel() {
 
       case "stopped":
         setSimRunning(false);
-        setCurrentWave("");
+        /* no waves */
         fetchState();
         break;
     }
@@ -231,10 +218,14 @@ export default function SimulationPanel() {
 
   const startPolling = useCallback(() => {
     if (pollIntervalRef.current) return;
+    console.log("[SimPanel] Starting poll interval (300ms)");
     pollIntervalRef.current = setInterval(async () => {
       try {
         const res = await fetch(`/api/simulation/events?since=${pollIndexRef.current}`);
         const { events: newEvents, nextIndex } = await res.json();
+        if (newEvents.length > 0) {
+          console.log(`[SimPanel] Received ${newEvents.length} events (types: ${newEvents.map((e: {type:string}) => e.type).join(", ")})`);
+        }
         pollIndexRef.current = nextIndex;
         for (const ev of newEvents) {
           processEvent(ev);
@@ -270,7 +261,7 @@ export default function SimulationPanel() {
       body: JSON.stringify({ action: "stop" }),
     });
     setSimRunning(false);
-    setCurrentWave("");
+    /* no waves */
     fetchState();
   }, [fetchState, stopPolling]);
 
@@ -284,7 +275,7 @@ export default function SimulationPanel() {
     setSimRunning(false);
     setDayNumber(0);
     setCurrentDate("");
-    setCurrentWave("");
+    /* no waves */
     setSimTime("");
     setSimEvents([]);
     setSimConversations([]);

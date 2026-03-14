@@ -15,6 +15,7 @@ interface Customer {
   interested_in_concessions: number;
   group_size_preference: number;
   notes: string;
+  buy_likelihood: number;
 }
 
 interface PoolBubble {
@@ -30,7 +31,7 @@ function formatLabel(s: string): string {
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-const POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_MS = 1500;
 
 export default function CustomersPanel() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -232,7 +233,8 @@ export default function CustomersPanel() {
     }
   }, [processing, exitBubble, fetchCustomers]);
 
-  // Auto-spawn when pool drops below threshold (use DB count as source of truth)
+  // Display count = floating bubbles (real-time), DB count for auto-spawn
+  const floatingCount = bubbles.filter((b) => b.state === "floating").length;
   const poolCount = customers.length;
   useEffect(() => {
     if (loading || spawningRef.current) return;
@@ -392,7 +394,7 @@ export default function CustomersPanel() {
 
         <div className="flex items-center gap-3">
           <span className="text-xs tabular-nums" style={{ color: "var(--text-muted)" }}>
-            {poolCount} in pool
+            {floatingCount} in pool
           </span>
           {spawning && (
             <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "var(--accent-green)" }}>
@@ -520,7 +522,11 @@ export default function CustomersPanel() {
 
               {filteredBubbles.map((b) => {
                 const c = b.customer;
-                const isBuyer = c.customer_type === "buyer";
+                const likelihood = c.buy_likelihood ?? 50;
+                // Green (high likelihood) to Red (low likelihood)
+                const r = Math.round(255 * (1 - likelihood / 100));
+                const g = Math.round(200 * (likelihood / 100));
+                const bubbleColor = `${r},${g},80`;
                 const isHovered = hoveredId === c.id;
                 const isActive = activeConversations.has(c.name);
                 const agentType = activeConversations.get(c.name);
@@ -557,27 +563,23 @@ export default function CustomersPanel() {
                             ? agentType === "promoter"
                               ? "radial-gradient(circle at 30% 30%, rgba(212,168,83,0.7), rgba(212,168,83,0.5), rgba(212,168,83,0.3))"
                               : "radial-gradient(circle at 30% 30%, rgba(91,217,123,0.7), rgba(91,217,123,0.5), rgba(91,217,123,0.3))"
-                            : isBuyer
-                              ? "radial-gradient(circle at 30% 30%, rgba(167,243,208,0.6), rgba(110,231,183,0.45), rgba(52,211,153,0.3))"
-                              : "radial-gradient(circle at 30% 30%, rgba(254,240,138,0.6), rgba(253,224,71,0.45), rgba(250,204,21,0.3))",
+                            : `radial-gradient(circle at 30% 30%, rgba(${bubbleColor},0.85), rgba(${bubbleColor},0.65), rgba(${bubbleColor},0.45))`,
                           boxShadow: isActive
                             ? agentType === "promoter"
                               ? "inset -3px -3px 8px rgba(0,0,0,0.15), inset 3px 3px 8px rgba(255,255,255,0.2), 0 0 24px rgba(212,168,83,0.5)"
                               : "inset -3px -3px 8px rgba(0,0,0,0.15), inset 3px 3px 8px rgba(255,255,255,0.2), 0 0 24px rgba(91,217,123,0.5)"
-                            : isBuyer
-                              ? "inset -3px -3px 8px rgba(0,0,0,0.15), inset 3px 3px 8px rgba(255,255,255,0.2), 0 6px 16px rgba(110,231,183,0.15)"
-                              : "inset -3px -3px 8px rgba(0,0,0,0.15), inset 3px 3px 8px rgba(255,255,255,0.2), 0 6px 16px rgba(253,224,71,0.15)",
+                            : `inset -3px -3px 8px rgba(0,0,0,0.15), inset 3px 3px 8px rgba(255,255,255,0.2), 0 6px 16px rgba(${bubbleColor},0.2)`,
                           border: isActive
                             ? agentType === "promoter"
                               ? "2px solid var(--gold)"
                               : "2px solid var(--accent-green)"
-                            : "1px solid rgba(255,255,255,0.15)",
+                            : `1px solid rgba(${bubbleColor},0.4)`,
                           animation: isActive ? "pulse 1.5s ease-in-out infinite" : undefined,
                         }}
                       />
                       <span
-                        className="relative z-10 max-w-full truncate px-1 text-center text-[10px] font-medium"
-                        style={{ color: "rgba(0,0,0,0.85)", textShadow: "0 1px 2px rgba(255,255,255,0.5)" }}
+                        className="relative z-10 max-w-full truncate px-1 text-center text-[10px] font-bold"
+                        style={{ color: "#fff", textShadow: "0 1px 3px rgba(0,0,0,0.7), 0 0 6px rgba(0,0,0,0.4)" }}
                       >
                         {c.name.split(" ")[0]}
                       </span>
@@ -612,10 +614,8 @@ export default function CustomersPanel() {
                         <div className="space-y-1.5 text-xs">
                           <p className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>{c.name}</p>
                           <p>
-                            <span style={{ color: "var(--text-muted)" }}>Type: </span>
-                            <span className={isBuyer ? "text-emerald-400" : "text-amber-400"}>
-                              {isBuyer ? "Ready to Buy" : "Needs Persuasion"}
-                            </span>
+                            <span style={{ color: "var(--text-muted)" }}>Buy Likelihood: </span>
+                            <span style={{ color: `rgb(${bubbleColor})`, fontWeight: 600 }}>{likelihood}%</span>
                           </p>
                           <p>
                             <span style={{ color: "var(--text-muted)" }}>Prefers: </span>
@@ -665,7 +665,7 @@ export default function CustomersPanel() {
             </div>
 
             <p className="mt-2 text-center text-xs" style={{ color: "var(--text-muted)" }}>
-              {poolCount} customers in pool
+              {floatingCount} customers in pool
             </p>
           </div>
         </div>

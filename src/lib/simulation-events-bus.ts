@@ -19,8 +19,10 @@ class SimulationEventBus {
   private _nextIndex = 0;
 
   push(event: SSEEvent): void {
+    const idx = this._nextIndex++;
+    console.log(`[EventBus] #${idx} ${event.type}${event.data && typeof event.data === "object" && "summary" in (event.data as Record<string,unknown>) ? ` — ${(event.data as Record<string,unknown>).summary}` : ""}`);
     this.events.push({
-      index: this._nextIndex++,
+      index: idx,
       type: event.type,
       data: event.data,
       timestamp: Date.now(),

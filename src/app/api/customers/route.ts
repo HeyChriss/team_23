@@ -8,7 +8,8 @@ export async function GET() {
     .prepare(
       `SELECT c.id, c.name, c.customer_type, c.age, c.preferences, c.loyalty_tier,
               c.visit_frequency, c.budget_preference, c.preferred_showtime,
-              c.interested_in_concessions, c.group_size_preference, c.notes
+              c.interested_in_concessions, c.group_size_preference, c.notes,
+              c.buy_likelihood
        FROM customers c
        WHERE NOT EXISTS (
          SELECT 1 FROM bookings b WHERE b.customer_name = c.name

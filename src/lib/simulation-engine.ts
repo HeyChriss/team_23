@@ -1,14 +1,13 @@
 /**
- * Simulation Engine — day-by-day orchestration of all agents.
+ * Simulation Engine — continuous customer flow.
  *
- * Each "day" is a complete simulation cycle:
- *   1. Strategic Phase: Optimizer → Scheduler → Promoter
- *   2. Customer Waves: Morning → Afternoon → Evening
+ * Each "day":
+ *   1. Strategic agents run once (Optimizer → Scheduler → Promoter)
+ *   2. Customers arrive one at a time, continuously, until the day's quota is met
  *   3. End-of-day: KPI snapshot, advance clock to next day
  *
- * There are no artificial timers — each day runs at the speed of the
- * LLM calls. When all conversations and agent work are exhausted,
- * the day ends and the next one begins immediately.
+ * No waves. No batching. Each customer arrives, interacts, and resolves
+ * before the next one starts.
  */
 
 import { getSimulationClock } from "./simulation-clock";
@@ -23,28 +22,18 @@ import { runScheduler } from "./agents/scheduler";
 import { runPromoter } from "./agents/promoter-agent";
 import type { SimulationEvent, ConversationEntry, ConversationUpdate } from "./agents/types";
 
-// ── Wave config ─────────────────────────────────────────────────────────────
+// ── Config ───────────────────────────────────────────────────────────────────
 
-interface WaveConfig {
-  name: string;
-  timeLabel: string;     // e.g. "10:00" — for display purposes
-  activeCustomers: number;
-  passiveCustomers: number;
-}
+const CUSTOMERS_PER_DAY = {
+  active: 10,   // total active customers per day
+  passive: 5,   // total passive customers per day
+};
 
-const DAILY_WAVES: WaveConfig[] = [
-  { name: "morning",   timeLabel: "10:00", activeCustomers: 3, passiveCustomers: 1 },
-  { name: "afternoon", timeLabel: "14:00", activeCustomers: 5, passiveCustomers: 2 },
-  { name: "evening",   timeLabel: "18:00", activeCustomers: 7, passiveCustomers: 3 },
-];
-
-// ── SSE event types ─────────────────────────────────────────────────────────
+// ── Event types ──────────────────────────────────────────────────────────────
 
 export type SSEEvent =
   | { type: "day_start"; data: { dayNumber: number; date: string; simTime: string } }
   | { type: "day_end"; data: { dayNumber: number; date: string; kpis: Record<string, unknown>; summary: DaySummary } }
-  | { type: "wave_start"; data: { wave: string; timeLabel: string; dayNumber: number } }
-  | { type: "wave_end"; data: { wave: string; booked: number; left: number } }
   | { type: "event"; data: SimulationEvent }
   | { type: "conversation"; data: ConversationEntry }
   | { type: "conversation_update"; data: ConversationUpdate }
@@ -62,31 +51,24 @@ interface DaySummary {
   schedulerActions: number;
 }
 
-// ── Engine ──────────────────────────────────────────────────────────────────
+// ── Engine ───────────────────────────────────────────────────────────────────
+
+const tick = () => new Promise((r) => setTimeout(r, 0));
 
 class SimulationEngine {
   private _running = false;
   private _dayNumber = 0;
   private _abortController: AbortController | null = null;
 
-  get isRunning() {
-    return this._running;
-  }
+  get isRunning() { return this._running; }
+  get dayNumber() { return this._dayNumber; }
 
-  get dayNumber() {
-    return this._dayNumber;
-  }
-
-  /**
-   * Run a single simulated day. All phases execute, then the day ends.
-   */
   async runDay(emit: (event: SSEEvent) => void, signal: AbortSignal): Promise<void> {
     this._dayNumber++;
     const clock = getSimulationClock();
     const db = getDb();
     const controller = new TheaterStateController(db);
 
-    // Set clock to morning of this day
     const baseDate = new Date("2026-03-14T08:00:00Z");
     baseDate.setUTCDate(baseDate.getUTCDate() + this._dayNumber - 1);
     const todayStr = baseDate.toISOString().split("T")[0];
@@ -94,234 +76,165 @@ class SimulationEngine {
     clock.jumpTo(simTimeMorning);
 
     const summary: DaySummary = {
-      totalCustomers: 0,
-      totalBookings: 0,
-      totalLeft: 0,
-      promosCreated: 0,
-      optimizerActions: 0,
-      schedulerActions: 0,
+      totalCustomers: 0, totalBookings: 0, totalLeft: 0,
+      promosCreated: 0, optimizerActions: 0, schedulerActions: 0,
     };
 
+    console.log(`\n[Engine] ═══ DAY ${this._dayNumber} START (${todayStr}) ═══`);
     emit({ type: "day_start", data: { dayNumber: this._dayNumber, date: todayStr, simTime: simTimeMorning } });
     insertEvent({ sim_time: simTimeMorning, event_type: "tick_start", agent: "engine", summary: `Day ${this._dayNumber} started (${todayStr})` });
 
     if (signal.aborted) return;
 
-    // ── Phase 1: Strategic Agents (sequential) ──────────────────────────
-    // Yield between agents so the stream flushes events to the client
-    const tick = () => new Promise((r) => setTimeout(r, 0));
+    // ── Strategic Agents (run in background — don't block customers) ────
+    // These are slow LLM calls (Sonnet). Fire them off and let customers
+    // start arriving immediately. Results emit as they complete.
 
-    // Optimizer
-    try {
-      const optimizerResult = await runOptimizer(simTimeMorning);
-      summary.optimizerActions = optimizerResult.actions.length;
-      for (const action of optimizerResult.actions) {
-        emit({
-          type: "event",
-          data: {
-            sim_time: simTimeMorning,
-            event_type: action.action,
-            agent: "optimizer",
-            summary: action.summary,
-            data: action.data ? JSON.stringify(action.data) : undefined,
-          },
-        });
-        await tick();
-      }
-    } catch (e) {
-      console.error("Optimizer error:", e);
-    }
+    const runStrategicAgents = async () => {
+      // Optimizer
+      console.log("[Engine] Running Optimizer (background)...");
+      try {
+        const result = await runOptimizer(simTimeMorning);
+        summary.optimizerActions = result.actions.length;
+        console.log(`[Engine] Optimizer done: ${result.actions.length} actions`);
+        for (const action of result.actions) {
+          emit({ type: "event", data: { sim_time: simTimeMorning, event_type: action.action, agent: "optimizer", summary: action.summary, data: action.data ? JSON.stringify(action.data) : undefined } });
+        }
+      } catch (e) { console.error("[Engine] Optimizer error:", e); }
 
-    if (signal.aborted) return;
-    await tick();
+      // Scheduler
+      console.log("[Engine] Running Scheduler (background)...");
+      try {
+        const result = await runScheduler(simTimeMorning);
+        summary.schedulerActions = result.actions.length;
+        console.log(`[Engine] Scheduler done: ${result.actions.length} actions`);
+        for (const action of result.actions) {
+          emit({ type: "event", data: { sim_time: simTimeMorning, event_type: action.action, agent: "scheduler", summary: action.summary, data: action.data ? JSON.stringify(action.data) : undefined } });
+        }
+      } catch (e) { console.error("[Engine] Scheduler error:", e); }
 
-    // Scheduler
-    try {
-      const schedulerResult = await runScheduler(simTimeMorning);
-      summary.schedulerActions = schedulerResult.actions.length;
-      for (const action of schedulerResult.actions) {
-        emit({
-          type: "event",
-          data: {
-            sim_time: simTimeMorning,
-            event_type: action.action,
-            agent: "scheduler",
-            summary: action.summary,
-            data: action.data ? JSON.stringify(action.data) : undefined,
-          },
-        });
-        await tick();
-      }
-    } catch (e) {
-      console.error("Scheduler error:", e);
-    }
+      // Promoter
+      console.log("[Engine] Running Promoter (background)...");
+      try {
+        const result = await runPromoter(simTimeMorning);
+        summary.promosCreated = result.actions.length;
+        console.log(`[Engine] Promoter done: ${result.actions.length} actions`);
+        for (const action of result.actions) {
+          emit({ type: "event", data: { sim_time: simTimeMorning, event_type: action.action, agent: "promoter", summary: action.summary, data: action.data ? JSON.stringify(action.data) : undefined } });
+        }
+      } catch (e) { console.error("[Engine] Promoter error:", e); }
+
+      emit({ type: "kpi", data: controller.getKPIs() as unknown as Record<string, unknown> });
+      console.log("[Engine] All strategic agents complete");
+    };
+
+    // Fire and forget — don't await. Customers start immediately.
+    const strategicPromise = runStrategicAgents();
 
     if (signal.aborted) return;
-    await tick();
 
-    // Promoter
-    try {
-      const promoterResult = await runPromoter(simTimeMorning);
-      summary.promosCreated = promoterResult.actions.length;
-      for (const action of promoterResult.actions) {
-        emit({
-          type: "event",
-          data: {
-            sim_time: simTimeMorning,
-            event_type: action.action,
-            agent: "promoter",
-            summary: action.summary,
-            data: action.data ? JSON.stringify(action.data) : undefined,
-          },
-        });
-        await tick();
-      }
-    } catch (e) {
-      console.error("Promoter error:", e);
-    }
+    // ── Continuous Customer Flow ─────────────────────────────────────────
+    // Customers arrive one at a time throughout the day.
+    // We interleave active and passive customers naturally.
 
-    if (signal.aborted) return;
-    await tick();
-
-    // ── Phase 2: Customer Waves ─────────────────────────────────────────
+    console.log(`[Engine] Starting customer flow: ${CUSTOMERS_PER_DAY.active} active + ${CUSTOMERS_PER_DAY.passive} passive`);
 
     const usedNames = new Set<string>();
+    const allActive = spawnActiveCustomers(CUSTOMERS_PER_DAY.active).filter((c) => { if (usedNames.has(c.name)) return false; usedNames.add(c.name); return true; });
+    const allPassive = spawnPassiveCustomers(CUSTOMERS_PER_DAY.passive).filter((c) => { if (usedNames.has(c.name)) return false; usedNames.add(c.name); return true; });
 
-    for (const wave of DAILY_WAVES) {
-      if (signal.aborted) return;
-
-      const waveTime = `${todayStr}T${wave.timeLabel}:00Z`;
-      clock.jumpTo(waveTime);
-
-      emit({ type: "wave_start", data: { wave: wave.name, timeLabel: wave.timeLabel, dayNumber: this._dayNumber } });
-
-      // Active customers
-      const activeCustomers = spawnActiveCustomers(wave.activeCustomers)
-        .filter((c) => !usedNames.has(c.name));
-      activeCustomers.forEach((c) => usedNames.add(c.name));
-
-      summary.totalCustomers += activeCustomers.length;
-
-      // Run customers ONE AT A TIME: arrive → conversation → outcome → next customer
-      let waveBooked = 0;
-      let waveLeft = 0;
-
-      for (const c of activeCustomers) {
-        if (signal.aborted) return;
-
-        // Announce arrival right before processing this customer
-        emit({
-          type: "event",
-          data: {
-            sim_time: waveTime,
-            event_type: "customer_arrived",
-            agent: "customer",
-            summary: `${c.name} arrived (${c.favoriteGenres.join("/")} fan, group of ${c.groupSize})`,
-            data: JSON.stringify({ customer: c.name, customerType: "active", genres: c.favoriteGenres, groupSize: c.groupSize }),
-          },
-        });
-        await tick();
-
-        try {
-          const conv = await runActiveCustomer(c, waveTime, (update) => {
-            emit({ type: "conversation_update", data: update });
-          });
-          emit({ type: "conversation", data: conv });
-          if (conv.outcome === "booked") {
-            waveBooked++;
-            summary.totalBookings++;
-            emit({
-              type: "event",
-              data: {
-                sim_time: waveTime,
-                event_type: "customer_booked",
-                agent: "customer",
-                summary: `${c.name} booked tickets!`,
-                data: JSON.stringify({ customer: c.name, ...(conv.bookingDetails || {}) }),
-              },
-            });
-          } else {
-            waveLeft++;
-            summary.totalLeft++;
-            emit({
-              type: "event",
-              data: {
-                sim_time: waveTime,
-                event_type: "customer_left",
-                agent: "customer",
-                summary: `${c.name} left without buying`,
-                data: JSON.stringify({ customer: c.name }),
-              },
-            });
-          }
-          await tick();
-        } catch {
-          waveLeft++;
-          summary.totalLeft++;
-          await tick();
-        }
-      }
-
-      // Passive customers (respond to promotions)
-      const passiveCustomers = spawnPassiveCustomers(wave.passiveCustomers)
-        .filter((c) => !usedNames.has(c.name));
-      passiveCustomers.forEach((c) => usedNames.add(c.name));
-      summary.totalCustomers += passiveCustomers.length;
-
-      // Run passive customers one at a time: arrive → decide → next
-      for (const c of passiveCustomers) {
-        if (signal.aborted) return;
-
-        emit({
-          type: "event",
-          data: {
-            sim_time: waveTime,
-            event_type: "customer_arrived",
-            agent: "customer",
-            summary: `${c.name} arrived (passive, ${c.favoriteGenres.join("/")} fan)`,
-            data: JSON.stringify({ customer: c.name, customerType: "passive" }),
-          },
-        });
-        await tick();
-
-        const pr = await runPassiveCustomer(c, waveTime);
-        if (pr.accepted) {
-          waveBooked++;
-          summary.totalBookings++;
-          emit({
-            type: "event",
-            data: {
-              sim_time: waveTime,
-              event_type: "promotion_accepted",
-              agent: "customer",
-              summary: `${pr.customerName} accepted promo "${pr.promoName}"`,
-              data: JSON.stringify({ customer: pr.customerName, ...(pr.bookingDetails || {}) }),
-            },
-          });
-        } else {
-          waveLeft++;
-          summary.totalLeft++;
-          emit({
-            type: "event",
-            data: {
-              sim_time: waveTime,
-              event_type: "promotion_rejected",
-              agent: "customer",
-              summary: `${pr.customerName} declined${pr.promoName ? ` "${pr.promoName}"` : " — no matching promo"}`,
-              data: JSON.stringify({ customer: pr.customerName }),
-            },
-          });
-        }
-        await tick();
-      }
-
-      // Emit KPIs after each wave
-      const waveKpis = controller.getKPIs();
-      emit({ type: "kpi", data: waveKpis as unknown as Record<string, unknown> });
-      emit({ type: "wave_end", data: { wave: wave.name, booked: waveBooked, left: waveLeft } });
+    // Interleave: roughly 2 active then 1 passive
+    const customerQueue: { type: "active" | "passive"; customer: typeof allActive[0] }[] = [];
+    let ai = 0, pi = 0;
+    while (ai < allActive.length || pi < allPassive.length) {
+      if (ai < allActive.length) customerQueue.push({ type: "active", customer: allActive[ai++] });
+      if (ai < allActive.length) customerQueue.push({ type: "active", customer: allActive[ai++] });
+      if (pi < allPassive.length) customerQueue.push({ type: "passive", customer: allPassive[pi++] });
     }
 
-    // ── Phase 3: End of Day ─────────────────────────────────────────────
+    summary.totalCustomers = customerQueue.length;
+    let totalBooked = 0;
+    let totalLeft = 0;
+
+    // Advance clock through the day as customers arrive
+    const hoursInDay = 14; // 8AM to 10PM
+    const timePerCustomer = hoursInDay / Math.max(customerQueue.length, 1);
+
+    for (let i = 0; i < customerQueue.length; i++) {
+      if (signal.aborted) return;
+
+      const { type, customer: c } = customerQueue[i];
+      const customerHour = 8 + i * timePerCustomer;
+      const h = Math.floor(customerHour);
+      const m = Math.floor((customerHour - h) * 60);
+      const simTime = `${todayStr}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00Z`;
+      clock.jumpTo(simTime);
+
+      // Announce arrival
+      console.log(`[Engine] 👤 ${type === "active" ? "Active" : "Passive"} customer #${i + 1}: ${c.name} (${c.favoriteGenres.join("/")})`);
+      emit({
+        type: "event",
+        data: {
+          sim_time: simTime,
+          event_type: "customer_arrived",
+          agent: "customer",
+          summary: `${c.name} arrived (${c.favoriteGenres.join("/")} fan, group of ${c.groupSize})`,
+          data: JSON.stringify({ customer: c.name, customerType: type, genres: c.favoriteGenres, groupSize: c.groupSize }),
+        },
+      });
+      await tick();
+
+      if (type === "active") {
+        // Active customer — talks to manager
+        try {
+          const conv = await runActiveCustomer(c, simTime, (update) => {
+            emit({ type: "conversation_update", data: update });
+          });
+          console.log(`[Engine]   → ${c.name}: ${conv.outcome}`);
+          emit({ type: "conversation", data: conv });
+
+          if (conv.outcome === "booked") {
+            totalBooked++;
+            emit({ type: "event", data: { sim_time: simTime, event_type: "customer_booked", agent: "customer", summary: `${c.name} booked tickets!`, data: JSON.stringify({ customer: c.name, ...(conv.bookingDetails || {}) }) } });
+          } else {
+            totalLeft++;
+            emit({ type: "event", data: { sim_time: simTime, event_type: "customer_left", agent: "customer", summary: `${c.name} left without buying`, data: JSON.stringify({ customer: c.name }) } });
+          }
+        } catch (e) {
+          console.error(`[Engine] Error with ${c.name}:`, e);
+          totalLeft++;
+        }
+      } else {
+        // Passive customer — responds to promotions
+        const pr = await runPassiveCustomer(c, simTime);
+        console.log(`[Engine]   → ${c.name}: ${pr.accepted ? "accepted" : "declined"}`);
+
+        if (pr.accepted) {
+          totalBooked++;
+          emit({ type: "event", data: { sim_time: simTime, event_type: "promotion_accepted", agent: "customer", summary: `${pr.customerName} accepted promo "${pr.promoName}"`, data: JSON.stringify({ customer: pr.customerName, ...(pr.bookingDetails || {}) }) } });
+        } else {
+          totalLeft++;
+          emit({ type: "event", data: { sim_time: simTime, event_type: "promotion_rejected", agent: "customer", summary: `${pr.customerName} declined${pr.promoName ? ` "${pr.promoName}"` : " — no matching promo"}`, data: JSON.stringify({ customer: pr.customerName }) } });
+        }
+      }
+
+      await tick();
+
+      // Emit KPIs every 3 customers so the UI stays updated
+      if ((i + 1) % 3 === 0) {
+        emit({ type: "kpi", data: controller.getKPIs() as unknown as Record<string, unknown> });
+      }
+    }
+
+    summary.totalBookings = totalBooked;
+    summary.totalLeft = totalLeft;
+
+    // Wait for strategic agents to finish before ending the day
+    await strategicPromise;
+
+    // ── End of Day ───────────────────────────────────────────────────────
+
+    console.log(`[Engine] ═══ DAY ${this._dayNumber} END — ${totalBooked} bookings, ${totalLeft} left ═══\n`);
 
     const endOfDayTime = `${todayStr}T22:00:00Z`;
     clock.jumpTo(endOfDayTime);
@@ -329,46 +242,22 @@ class SimulationEngine {
     const finalKpis = controller.getKPIs();
     const finalTheaters = controller.getTheaterSummaries();
 
-    emit({
-      type: "state",
-      data: {
-        kpis: finalKpis as unknown as Record<string, unknown>,
-        theaters: finalTheaters as unknown as Record<string, unknown>[],
-      },
-    });
+    emit({ type: "state", data: { kpis: finalKpis as unknown as Record<string, unknown>, theaters: finalTheaters as unknown as Record<string, unknown>[] } });
+    emit({ type: "kpi", data: finalKpis as unknown as Record<string, unknown> });
+    emit({ type: "day_end", data: { dayNumber: this._dayNumber, date: todayStr, kpis: finalKpis as unknown as Record<string, unknown>, summary } });
 
-    emit({
-      type: "day_end",
-      data: {
-        dayNumber: this._dayNumber,
-        date: todayStr,
-        kpis: finalKpis as unknown as Record<string, unknown>,
-        summary,
-      },
-    });
-
-    insertEvent({
-      sim_time: endOfDayTime,
-      event_type: "tick_end",
-      agent: "engine",
-      summary: `Day ${this._dayNumber} ended — ${summary.totalBookings} bookings, ${summary.totalLeft} left, ${summary.totalCustomers} total customers`,
-    });
+    insertEvent({ sim_time: endOfDayTime, event_type: "tick_end", agent: "engine", summary: `Day ${this._dayNumber} ended — ${totalBooked} bookings, ${totalLeft} left, ${summary.totalCustomers} total customers` });
   }
 
-  /**
-   * Run simulation loop: one day after another until stopped.
-   * No artificial delays — each day runs as fast as the API calls complete.
-   */
   async runLoop(emit: (event: SSEEvent) => void, signal: AbortSignal): Promise<void> {
     this._running = true;
-
     try {
       while (this._running && !signal.aborted) {
         await this.runDay(emit, signal);
       }
     } catch (e) {
       if (!signal.aborted) {
-        console.error("Simulation loop error:", e);
+        console.error("[Engine] Simulation loop error:", e);
         emit({ type: "error", data: { message: String(e) } });
       }
     } finally {
@@ -379,17 +268,13 @@ class SimulationEngine {
 
   stop(): void {
     this._running = false;
-    if (this._abortController) {
-      this._abortController.abort();
-      this._abortController = null;
-    }
+    if (this._abortController) { this._abortController.abort(); this._abortController = null; }
   }
 
   reset(): void {
     this.stop();
     this._dayNumber = 0;
-    const clock = getSimulationClock();
-    clock.reset();
+    getSimulationClock().reset();
     clearEvents();
   }
 
@@ -398,12 +283,8 @@ class SimulationEngine {
   }
 }
 
-// Singleton
 let _engine: SimulationEngine | null = null;
-
 export function getSimulationEngine(): SimulationEngine {
-  if (!_engine) {
-    _engine = new SimulationEngine();
-  }
+  if (!_engine) { _engine = new SimulationEngine(); }
   return _engine;
 }
