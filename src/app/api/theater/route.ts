@@ -15,6 +15,7 @@ export async function GET() {
       `SELECT DISTINCT m.id, m.name, m.category, m.length_minutes, m.language, m.director, m.actors
        FROM movies m
        INNER JOIN showtimes s ON m.id = s.movie_id
+       WHERE m.is_active = 1
        ORDER BY m.name`
     )
     .all();
@@ -26,7 +27,7 @@ export async function GET() {
               m.id AS movie_id, m.name AS movie_name, m.category, m.length_minutes,
               t.id AS theater_id, t.name AS theater_name, t.seat_count, t.screen_type
        FROM showtimes s
-       JOIN movies m ON s.movie_id = m.id
+       JOIN movies m ON s.movie_id = m.id AND m.is_active = 1
        JOIN theaters t ON s.theater_id = t.id
        ORDER BY s.show_date, s.start_time, t.name`
     )

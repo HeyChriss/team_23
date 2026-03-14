@@ -56,7 +56,7 @@ If they do, use the getActivePromotions tool to show relevant deals, or validate
             SELECT DISTINCT m.id, m.name, m.category, m.length_minutes, m.language, m.director
             FROM movies m
             INNER JOIN showtimes s ON m.id = s.movie_id
-            WHERE s.status IN ('scheduled', 'selling')
+            WHERE s.status IN ('scheduled', 'selling') AND m.is_active = 1
           `;
           const params: string[] = [];
 
@@ -118,9 +118,9 @@ If they do, use the getActivePromotions tool to show relevant deals, or validate
                    m.id AS movie_id, m.name AS movie_name, m.length_minutes, m.category,
                    t.id AS theater_id, t.name AS theater_name, t.seat_count, t.screen_type
             FROM showtimes s
-            JOIN movies m ON s.movie_id = m.id
+            JOIN movies m ON s.movie_id = m.id AND m.is_active = 1
             JOIN theaters t ON s.theater_id = t.id
-            WHERE s.show_date = ?
+            WHERE s.show_date = ? AND s.status IN ('scheduled', 'selling')
           `;
           const params: (string | number)[] = [showDate];
 

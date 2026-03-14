@@ -3,8 +3,9 @@
 import { useChat } from "@ai-sdk/react";
 import { useState } from "react";
 import Dashboard from "@/components/Dashboard";
+import CuratorPanel from "@/components/CuratorPanel";
 
-type Tab = "chat" | "dashboard";
+type Tab = "chat" | "dashboard" | "curator";
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("chat");
@@ -51,6 +52,16 @@ export default function Home() {
             >
               Dashboard
             </button>
+            <button
+              onClick={() => setTab("curator")}
+              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                tab === "curator"
+                  ? "bg-amber-600 text-white"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              Curator
+            </button>
           </div>
         </div>
       </header>
@@ -59,6 +70,13 @@ export default function Home() {
       {tab === "dashboard" && (
         <main className="flex-1 overflow-y-auto">
           <Dashboard />
+        </main>
+      )}
+
+      {/* ── Curator Tab ────────────────────────────────── */}
+      {tab === "curator" && (
+        <main className="flex-1 overflow-y-auto">
+          <CuratorPanel />
         </main>
       )}
 
